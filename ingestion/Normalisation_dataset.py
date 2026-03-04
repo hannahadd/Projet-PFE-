@@ -1,151 +1,141 @@
 import pandas as pd
 import json
-from pathlib import Path
-
-# ==========================
-# CONFIGURATION
-# ==========================
-
-JSONL_PATH = "ccnews_dataset.jsonl"
-CSV_PATH = "dataset_top20.csv"
-OUTPUT_PATH = "merged_dataset.json"
-
-# Colonnes finales souhaitées
-FINAL_COLUMNS = [
-    "title",
-    "content",
-    "published_date",
-    "source",
-    "url"
-]
-
-# ==========================
-# FONCTIONS
-# ==========================
-
-def normalize_text(x):
-    if x is None:
-        return None
-
-    # Si c’est déjà une string
-    if isinstance(x, str):
-        return x.strip()
-
-    # Si c’est une liste
-    if isinstance(x, list):
-        return " ".join([str(i) for i in x])
-
-    # Si c’est un dict
-    if isinstance(x, dict):
-        return " ".join([str(v) for v in x.values()])
-
-    # Si c’est un NaN pandas
-    if pd.isna(x):
-        return None
-
-    # Sinon on force en string
-    return str(x).strip()
 
 
+# ==============================
+# DATE PARSING ROBUSTE
+# ==============================
+def parse_date_column(series):
 
-def load_jsonl(path):
-    df = pd.read_json(path, lines=True)
-    return df
+    if series.dtype in ["int64", "float64"]:
+        series = series.astype(str)
 
-
-def load_csv(path):
-    df = pd.read_csv(path)
-    return df
-
-
-def normalize_dataframe(df):
-
-    # Standardiser noms
-    df.columns = [c.lower().strip() for c in df.columns]
-
-    column_mapping = {
-        "headline": "title",
-        "article": "content",
-        "text": "content",
-        "description": "content",
-        "date": "published_date",
-        "published": "published_date",
-        "publication_date": "published_date",
-        "source_name": "source",
-        "link": "url",
-    }
-
-    df = df.rename(columns=column_mapping)
-
-    # 🔥 Supprimer colonnes dupliquées (garde la première)
-    df = df.loc[:, ~df.columns.duplicated()]
-
-    # Ajouter colonnes manquantes
-    for col in FINAL_COLUMNS:
-        if col not in df.columns:
-            df[col] = None
-
-    # Ne garder que colonnes utiles
-    df = df[FINAL_COLUMNS]
-
-    # Forcer type string propre
-    for col in ["title", "content", "source", "url"]:
-        df[col] = df[col].astype(str).str.strip()
-
-    # Conversion date
-    df["published_date"] = pd.to_datetime(
-        df["published_date"],
+    parsed = pd.to_datetime(
+        series,
+        format="%Y%m%d%H%M%S",
         errors="coerce"
     )
 
-    # Supprimer contenu vide
-    df = df[df["content"].notna()]
-    df = df[df["content"] != "None"]
-    df = df[df["content"] != ""]
+    mask = parsed.isna()
+    if mask.any():
+        parsed.loc[mask] = pd.to_datetime(
+            series.loc[mask],
+            errors="coerce"
+        )
 
-    return df
-
-
-# ==========================
-# PIPELINE PRINCIPAL
-# ==========================
-
-def main():
-    print("Chargement des fichiers...")
-    
-    df_jsonl = load_jsonl(JSONL_PATH)
-    df_csv = load_csv(CSV_PATH)
-
-    print("Normalisation...")
-    
-    df_jsonl = normalize_dataframe(df_jsonl)
-    df_csv = normalize_dataframe(df_csv)
-
-    print("Fusion...")
-    
-    merged_df = pd.concat([df_jsonl, df_csv], ignore_index=True)
-
-    print("Suppression doublons...")
-    
-    merged_df = merged_df.drop_duplicates(subset=["title", "content"])
-
-    print("Tri par date...")
-    
-    merged_df = merged_df.sort_values(by="published_date", ascending=False)
-
-    print("Export JSON...")
-    
-    merged_df.to_json(
-        OUTPUT_PATH,
-        orient="records",
-        date_format="iso",
-        force_ascii=False,
-        indent=2
-    )
-
-    print(f"Dataset fusionné sauvegardé : {OUTPUT_PATH}")
-    print(f"Nombre final d'articles : {len(merged_df)}")
+    return parsed
 
 
-if __name__ == "__main__":
-    main()
+# ==============================
+# NORMALISATION GENERIQUE
+# ==============================
+def normalize_dataframe(df):
+
+    df = df.copy()
+
+    # TITLE
+    if "headline" in df.columns:
+        df["title"] = df["headline"]
+    elif "title" not in df.columns:
+        df["title"] = None
+
+    # CONTENT priorité stricte
+    if "text" in df.columns:
+        df["content"] = df["text"]
+    elif "article" in df.columns:
+        df["content"] = df["article"]
+    elif "description" in df.columns:
+        df["content"] = df["description"]
+    else:
+        df["content"] = None
+
+    # DATE
+    if "date" in df.columns:
+        df["published_date"] = parse_date_column(df["date"])
+    elif "published_date" in df.columns:
+        df["published_date"] = parse_date_column(df["published_date"])
+    elif "published" in df.columns:
+        df["published_date"] = parse_date_column(df["published"])
+    else:
+        df["published_date"] = pd.NaT
+
+    # SOURCE
+    if "source_name" in df.columns:
+        df["source"] = df["source_name"]
+    elif "domain" in df.columns:
+        df["source"] = df["domain"]
+    elif "source" not in df.columns:
+        df["source"] = None
+
+    # URL
+    if "link" in df.columns:
+        df["url"] = df["link"]
+    elif "url" not in df.columns:
+        df["url"] = None
+
+    df_final = df[[
+        "title",
+        "content",
+        "published_date",
+        "source",
+        "url"
+    ]].copy()
+
+    # Nettoyage
+    df_final["content"] = df_final["content"].astype(str).str.strip()
+    df_final["title"] = df_final["title"].astype(str).str.strip()
+
+    df_final = df_final[
+        (df_final["content"] != "") &
+        (df_final["title"] != "")
+    ]
+
+    return df_final
+
+
+# ==============================
+# CHARGEMENT DATASET 1 (CSV)
+# ==============================
+df_csv = pd.read_csv("dataset_top20.csv")
+
+df_csv_normalized = normalize_dataframe(df_csv)
+
+
+# ==============================
+# CHARGEMENT DATASET 2 (JSONL)
+# ==============================
+df_jsonl = pd.read_json(
+    "ccnews_dataset.jsonl",
+    lines=True,
+    encoding="utf-8"
+)
+
+df_jsonl_normalized = normalize_dataframe(df_jsonl)
+
+
+# ==============================
+# FUSION
+# ==============================
+merged_df = pd.concat(
+    [df_csv_normalized, df_jsonl_normalized],
+    ignore_index=True
+)
+
+# Suppression doublons sur URL (clé fiable)
+merged_df = merged_df.drop_duplicates(subset=["url"])
+
+
+# ==============================
+# EXPORT JSON FINAL
+# ==============================
+merged_df["published_date"] = merged_df["published_date"].astype(str)
+
+merged_df.to_json(
+    "merged_dataset.json",
+    orient="records",
+    force_ascii=False,
+    indent=2
+)
+
+print("Fusion terminée.")
+print("Nombre total d’articles :", len(merged_df))
