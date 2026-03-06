@@ -103,6 +103,10 @@ def _expand_interest(interest: str) -> List[str]:
             out.append(s2)
     return out
 
+def _interest_phrases(interest: str) -> List[str]:
+    expanded = _expand_interest(interest)
+    return [interest] + [x for x in expanded if x != interest][:2]
+
 
 def _build_export_blocks(
     interests: List[str],
@@ -128,11 +132,19 @@ def _build_export_blocks(
     if aggregate or len(interests) <= 1:
         expanded: List[str] = []
         for interest in interests:
-            expanded.extend(_expand_interest(interest))
+            expanded.extend(_interest_phrases(interest))
         if not expanded:
             expanded = interests
+        deduped: List[str] = []
+        seen: Set[str] = set()
+        for item in expanded:
+            key = (item or "").strip().lower()
+            if key and key not in seen:
+                deduped.append(item)
+                seen.add(key)
+        expanded = deduped
         user = core.UserProfile(interests_text=expanded, interests_tags=tags)
-        user.build_from_onboarding(embedder.encode, k_max=min(8, len(expanded) or 1))
+        user.build_from_onboarding(embedder.encode, k_max=len(expanded) or 1)
         scores_map: Dict[str, float] = {}
         feed = core.retrieve_feed(
             qdrant_index=qindex,
@@ -179,9 +191,9 @@ def _build_export_blocks(
         return blocks
 
     for interest in interests:
-        expanded = _expand_interest(interest)
-        user = core.UserProfile(interests_text=expanded, interests_tags=tags)
-        user.build_from_onboarding(embedder.encode, k_max=min(6, len(expanded) or 1))
+        phrases = _interest_phrases(interest)
+        user = core.UserProfile(interests_text=phrases, interests_tags=tags)
+        user.build_from_onboarding(embedder.encode, k_max=len(phrases))
         scores_map: Dict[str, float] = {}
         feed = core.retrieve_feed(
             qdrant_index=qindex,

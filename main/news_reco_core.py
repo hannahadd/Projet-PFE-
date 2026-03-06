@@ -1,6 +1,5 @@
 import os
 import re
-import math
 import json
 import hashlib
 from pathlib import Path
@@ -24,10 +23,6 @@ try:
     HAS_LANGDETECT = True
 except Exception:
     HAS_LANGDETECT = False
-
-# Optional reranker (lazy import)
-HAS_RERANKER = False
-
 
 # ----------------------------
 # Utils
@@ -57,12 +52,6 @@ def cosine(a: np.ndarray, b: np.ndarray) -> float:
     na = np.linalg.norm(a) + 1e-12
     nb = np.linalg.norm(b) + 1e-12
     return float(np.dot(a, b) / (na * nb))
-
-def recency_boost(published_at: Optional[datetime], tau_hours: float = 72.0) -> float:
-    if not published_at:
-        return 0.5  # fallback
-    age_hours = (now_utc() - published_at).total_seconds() / 3600.0
-    return float(math.exp(-age_hours / tau_hours))
 
 def article_fingerprint(title: str, text: str, url: str = "", n_chars: int = 400) -> str:
     u = norm_text(url)
@@ -441,35 +430,6 @@ class BM25Index:
 
 
 # ----------------------------
-# Rerank (optional)
-# ----------------------------
-class OptionalReranker:
-    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3"):
-        self.enabled = False
-        self.reranker = None
-        try:
-            from FlagEmbedding.inference.reranker import FlagReranker
-
-            self.reranker = FlagReranker(model_name, use_fp16=True)
-            self.enabled = True
-        except Exception:
-            self.enabled = False
-
-    def rerank(self, query: str, candidates: List[Article]) -> List[Tuple[str, float]]:
-        """
-        Returns list of (article_id, rerank_score) sorted desc.
-        """
-        if not self.enabled or not candidates:
-            return [(a.id, 0.0) for a in candidates]
-
-        pairs = [(query, a.canonical_text) for a in candidates]
-        scores = self.reranker.compute_score(pairs, batch_size=16)
-        scores = np.asarray(scores, dtype=np.float32)
-        order = np.argsort(-scores)
-        return [(candidates[i].id, float(scores[i])) for i in order]
-
-
-# ----------------------------
 # Retrieval + scoring + MMR
 # ----------------------------
 def mmr_select(
@@ -570,7 +530,6 @@ def retrieve_feed(
     bm25_k: int = 250,
     days: int = 14,
     top_k: int = 20,
-    use_rerank: bool = True,
     lang_filter: Optional[Set[str]] = None,
     min_sim: float = 0.0,
     min_bm25: float = 0.0,
@@ -638,25 +597,13 @@ def retrieve_feed(
         dense_only=dense_only,
     )
 
-    # 4) Optional rerank (cross-encoder style)
-    if use_rerank and HAS_RERANKER:
-        rr = OptionalReranker()
-        cand_list = list(candidates.values())
-        reranked = rr.rerank(qtext, cand_list)  # sorted
-        # blend rerank into score (lightweight)
-        rr_map = {aid: s for aid, s in reranked}
-        max_rr = max(rr_map.values()) if rr_map else 1.0
-        for aid in list(scores.keys()):
-            rr_norm = rr_map.get(aid, 0.0) / (max_rr + 1e-9)
-            scores[aid] = 0.70 * scores[aid] + 0.30 * rr_norm
-
-    # 5) Sort by score desc for MMR seed list
+    # 4) Sort by score desc for MMR seed list
     ordered_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
 
     # vectors for MMR
     cand_vecs = {aid: candidates[aid].embedding for aid in ordered_ids if candidates[aid].embedding is not None}
 
-    # 6) MMR diversity + near-dup control
+    # 5) MMR diversity + near-dup control
     final_ids = mmr_select(
         cand_ids=ordered_ids,
         cand_scores=scores,
@@ -824,7 +771,6 @@ def main(
             days=days,
             top_k=top_k_per_interest,
             tau_hours=tau_hours,
-            use_rerank=True,
             lang_filter=lang_filter,
             min_sim=min_sim,
             min_bm25=min_bm25,
@@ -910,7 +856,6 @@ def main(
             days=days,
             top_k=top_k_per_interest,
             tau_hours=tau_hours,
-            use_rerank=True,
             lang_filter=lang_filter,
             min_sim=min_sim,
             min_bm25=min_bm25,
