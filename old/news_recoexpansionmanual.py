@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import os
 import sys
 from pathlib import Path
@@ -31,64 +30,43 @@ def _load_src_news_module():
 core = _load_src_news_module()
 
 
-DEFAULT_INTERESTS: List[str] = [
-    "war and international conflict",
-    "AI and LLMs",
-    "french politics",
-    "SpaceX",
-    "Apple",
-]
-
-
-INTEREST_EXPANSIONS: Dict[str, List[str]] = {}
-
-
-def _candidate_expansion_dirs() -> List[Path]:
-    here = Path(__file__).resolve().parent
-    return [
-        here / "expand" / "interest",
-        here / "expandmodule" / "interest",
-    ]
-
-
-def _normalize_item_list(items: List[str]) -> List[str]:
-    out: List[str] = []
-    for item in items:
-        value = str(item or "").strip()
-        if value and value not in out:
-            out.append(value)
-    return out
-
-
-def load_interest_expansions(expansions_dir: Optional[str]) -> Dict[str, List[str]]:
-    if expansions_dir:
-        base = Path(expansions_dir)
-    else:
-        candidates = [p for p in _candidate_expansion_dirs() if p.exists()]
-        base = candidates[0] if candidates else _candidate_expansion_dirs()[0]
-
-    if not base.exists() or not base.is_dir():
-        print(f"[WARN] Expansions directory not found: {base}. Using raw interest text only.")
-        return {}
-
-    mapping: Dict[str, List[str]] = {}
-    for path in sorted(base.glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-
-        interest = str((payload or {}).get("interest") or "").strip()
-        items = (payload or {}).get("items") or []
-        if not interest or not isinstance(items, list):
-            continue
-
-        normalized = _normalize_item_list([str(x) for x in items])
-        if normalized:
-            mapping[interest] = normalized
-
-    print(f"Loaded expansions for {len(mapping)} interests from: {base}")
-    return mapping
+INTEREST_EXPANSIONS: Dict[str, List[str]] = {
+    "AI and LLMs": [
+        "Artificial Intelligence news",
+        "Large language models usage",
+        "Generative AI capabilities",
+        "Deep learning algorithms",
+        "Machine intelligence ethics",
+    ],
+    "SpaceX": [
+        "SpaceX launch schedule",
+        "SpaceX rocket failures",
+        "SpaceX Starship tests",
+        "SpaceX Elon Musk news",
+        "SpaceX satellite launches",
+    ],
+    "Apple": [
+        "Apple stock price",
+        "Apple product launch",
+        "Apple earnings report",
+        "Apple CEO interview",
+        "Apple supply chain",
+    ],
+    "french politics": [
+        "French election results",
+        "National parliamentary votes",
+        "Government formation process",
+        "European political alliances",
+        "Legislative committee reports",
+    ],
+    "war and international conflict": [
+        "War and peace treaties",
+        "Military intervention operations",
+        "International conflict resolutions",
+        "Arms control agreements",
+        "Global security crises",
+    ],
+}
 
 
 def _expand_interest(interest: str) -> List[str]:
@@ -233,11 +211,6 @@ def _build_export_blocks(
 def main() -> int:
     parser = argparse.ArgumentParser(description="News retrieval with PostgreSQL output")
     parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))
-    parser.add_argument(
-        "--expansions-dir",
-        default=None,
-        help="Directory containing one expansion JSON per interest (default: main/expand/interest or main/expandmodule/interest)",
-    )
     parser.add_argument("--qdrant-url", default="http://localhost:6333")
     parser.add_argument("--collection", default="news_dense")
     parser.add_argument("--max-articles", type=int, default=None)
@@ -256,9 +229,6 @@ def main() -> int:
     parser.add_argument("--mmr-lambda", type=float, default=0.82)
     parser.add_argument("--mmr-near-dup-threshold", type=float, default=0.92)
     args = parser.parse_args()
-
-    global INTEREST_EXPANSIONS
-    INTEREST_EXPANSIONS = load_interest_expansions(args.expansions_dir)
 
     store = PostgresStore(args.db_url)
     store.init_db()
@@ -304,7 +274,13 @@ def main() -> int:
 
     interests = [i for i in (args.interest or []) if i and i.strip()]
     if not interests:
-        interests = list(DEFAULT_INTERESTS)
+        interests = [
+            "war and international conflict",
+            "AI and LLMs",
+            "french politics",
+            "SpaceX",
+            "Apple",
+        ]
 
     lang_filter = None
     if args.lang:

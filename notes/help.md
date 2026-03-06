@@ -185,6 +185,13 @@ python main/writing.py \
   --eval-file main/ingestiontable/evalarticles/evalarticles.json \
   --out main/ingestiontable/evalarticles/report_retrieval_run1.json
 
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --table retrieval_hits \
+  --eval-file main/ingestiontable/evalarticles/evalarticles.json \
+  --out main/ingestiontable/evalarticles/report_retrieval_run1.json \
+  --run-id 1 
+
 # 2) Évaluer un run rerank
 /home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
@@ -192,6 +199,14 @@ python main/writing.py \
   --table rerank_hits \
   --eval-file main/ingestiontable/evalarticles/evalarticles.json \
   --out main/ingestiontable/evalarticles/report_rerank_run1.json
+
+  # 2) Évaluer un run rerank
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --table rerank_hits \
+  --eval-file main/ingestiontable/evalarticles/evalarticles.json \
+  --out main/ingestiontable/evalarticles/report_rerank_run1.json \
+  --run-id 1 
 
 # 3) Ajouter les articles d’éval dans la table articles + évaluer
 /home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
@@ -204,6 +219,12 @@ python main/writing.py \
 
 
 ---------------------------------------------------------
+
+/home/pfe/Documents/PFE/.venv312/bin/python main/expandmodule/generate_expansions.py   --model qwen3.5:9b-q4_K_M   --count 10 --min-words 1 --max-words 2   --out-dir main/expandmodule/interest   --topic "war and international conflict"   --topic "SpaceX"   --topic "Apple"   --topic "AI and LLMs"   --topic "french politics"
+
+
+
+------------------------------------------------------------
 
 
   yohan@neon:~/Downloads$ docker ps
