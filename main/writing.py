@@ -15,7 +15,7 @@ from db import PostgresStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC_WRITING_PATH = ROOT / "src" / "writing.py"
+SRC_WRITING_PATH = Path(__file__).resolve().parent / "writing_core.py"
 
 
 def _load_src_writing_module():

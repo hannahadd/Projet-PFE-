@@ -174,6 +174,35 @@ python main/writing.py \
 
 
 
+
+------------------------------
+
+# 1) Évaluer un run retrieval
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --run-id 1 \
+  --table retrieval_hits \
+  --eval-file main/ingestiontable/evalarticles/evalarticles.json \
+  --out main/ingestiontable/evalarticles/report_retrieval_run1.json
+
+# 2) Évaluer un run rerank
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --run-id 1 \
+  --table rerank_hits \
+  --eval-file main/ingestiontable/evalarticles/evalarticles.json \
+  --out main/ingestiontable/evalarticles/report_rerank_run1.json
+
+# 3) Ajouter les articles d’éval dans la table articles + évaluer
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --run-id 1 \
+  --table rerank_hits \
+  --eval-file main/ingestiontable/evalarticles/evalarticles.json \
+  --upsert-articles \
+  --out main/ingestiontable/evalarticles/report_rerank_run1.json
+
+
 ---------------------------------------------------------
 
 

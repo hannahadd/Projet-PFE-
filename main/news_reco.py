@@ -14,7 +14,7 @@ from db import PostgresStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC_NEWS_PATH = ROOT / "src" / "news_reco.py"
+SRC_NEWS_PATH = Path(__file__).resolve().parent / "news_reco_core.py"
 
 
 def _load_src_news_module():
@@ -146,7 +146,12 @@ def _build_export_blocks(
 
 
 def main() -> int:
-    default_data_path = str((ROOT / "src" / "merged_dataset.json"))
+    candidate_data_paths = [
+        ROOT / "merged_dataset.json",
+        Path(__file__).resolve().parent / "ingestiontable" / "merged_dataset.normalized.json",
+        ROOT / "old" / "src" / "merged_dataset.json",
+    ]
+    default_data_path = str(next((p for p in candidate_data_paths if p.exists()), candidate_data_paths[0]))
     parser = argparse.ArgumentParser(description="News retrieval with PostgreSQL output")
     parser.add_argument("data_path", nargs="?", default=default_data_path)
     parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))

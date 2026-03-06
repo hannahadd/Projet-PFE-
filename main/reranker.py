@@ -11,7 +11,7 @@ from db import PostgresStore
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC_RERANKER_PATH = ROOT / "src" / "reranker.py"
+SRC_RERANKER_PATH = Path(__file__).resolve().parent / "reranker_core.py"
 
 
 def _load_src_reranker_module():
