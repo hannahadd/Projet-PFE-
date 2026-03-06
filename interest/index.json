@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-03-06T01:48:31Z",
+  "input": "src/qwenrerankbge.json",
+  "ollama_url": "http://localhost:11434",
+  "model": "qwen3.5:9b-q4_K_M",
+  "params": {
+    "top_n": 10,
+    "max_chars": 9000,
+    "temperature": 0.2,
+    "num_predict": 500,
+    "num_ctx": 4096,
+    "enforce_json": true
+  },
+  "interests": [
+    {
+      "interest": "Guerres et conflits internationaux",
+      "file": "guerres_et_conflits_internationaux.json",
+      "n_articles_written": 10
+    },
+    {
+      "interest": "IA et les LLMs",
+      "file": "ia_et_les_llms.json",
+      "n_articles_written": 10
+    },
+    {
+      "interest": "Politique Française",
+      "file": "politique_francaise.json",
+      "n_articles_written": 10
+    },
+    {
+      "interest": "SpaceX",
+      "file": "spacex.json",
+      "n_articles_written": 10
+    },
+    {
+      "interest": "Apple",
+      "file": "apple.json",
+      "n_articles_written": 10
+    }
+  ]
+}

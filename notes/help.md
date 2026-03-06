@@ -15,6 +15,44 @@ Successfully installed pip-25.0.1
 
 ```
 
+
+  166  python src/news_reco.py
+  167  python src/news_reco.py --reindex
+  168  python src/news_reco.py 
+  169  python src/news_reco.py --dense-only
+  170* 
+  171  python src/news_reco.py --reindex --dense-only
+  172* 
+  173  python src/news_reco.py --reindex --days 100
+  174  source /home/pfe/Documents/PFE/.venv312/bin/activate
+  175  python src/news_reco.py --reindex --days 100
+  176  python src/news_reco2.py --reindex --days 100
+  177  python src/news_reco2.py  --days 100 -topK 30
+  178  python src/news_reco2.py  --days 100 -topk 30
+  179  python src/news_reco2.py  --days 100 --topk 30
+  180  python src/news_reco2.py  --days 100 --topk 30 --out src/qwencandidates.json
+  181  python src/reranker.py --in src/qwencandidates.json src/qwenrerank.json --max-length 768 --batch-size 1 --topn 10
+  182  python src/reranker.py --in src/qwencandidates.json --out src/qwenrerank.json --max-length 768 --batch-size 1 --topn 10
+  183  python src/reranker.py --in src/qwencandidates.json --out src/qwenrerank.json --max-length 768 --batch-size 1 --topn 10 --hydrate --dataset src/merged_dataset.json
+  184  python ingestionTest/Normalisation_dataset.py
+  185  python src/news_reco.py --reindex  --days 100 -topK 30
+  186  python src/news_reco.py --reindex  --days 100 --dense-only --topK 30
+  187  python src/news_reco.py --reindex  --days 100 --dense-only --topk 30
+  188  python src/news_reco.py  --days 100 --dense-only --topk 30 --out src/bgecandidate.json
+  189  python src/reranker.py --in src/bgecandidate.json --out src/qwenrerankbge.json --max-length 768 --batch-size 1 --topn 10 --hydrate --dataset src/merged_dataset.json
+  190  git add .
+  191  git add commit -m "test"
+  192  git commit -m "test"
+  193  git push
+  194  python src/writing.py  --input src/qwenrerankbge.json --model "qwen3.5:9b-q4_K_M" --num_ctx 4096
+  195  python src/writing.py  --input src/qwenrerankbge.json --model "qwen3.5:9b-q4_K_M" --debug
+
+
+
+sudo systemctl enable ollama
+sudo systemctl start ollama
+sudo systemctl status ollama
+
 ----------------------------------------------------------------------
 
 docker pull qdrant/qdrant:latest
@@ -52,3 +90,95 @@ ajusté le score en --dense-only à: 0.50 * sim + 0.45 * recency + 0.05 * qualit
 ajouté un flag CLI --tau-hours pour le régler
 
   ----------------------------------------------------
+
+
+  “Base de données sérieuse” mais garder du JSON
+L’idée propre, c’est: JSON dans la DB (champ JSONB) ou dans un stockage objet, mais pas des fichiers JSON versionnés dans Git.
+
+Option A (recommandée) : PostgreSQL + JSONB + (Qdrant ou pgvector)
+
+PostgreSQL devient la “source of truth” pour les articles.
+Table articles avec colonnes normalisées + une colonne raw JSONB pour garder le JSON original.
+Index full-text (BM25-like) via tsvector (ou Elastic/OpenSearch si tu scales fort).
+Embeddings:
+soit Qdrant (tu gardes ton setup actuel) avec article_id comme clé de jointure,
+soit pgvector pour tout faire dans Postgres.
+Schéma minimal (id stable comme tu fais déjà) :
+
+articles(id TEXT PRIMARY KEY, url TEXT UNIQUE, domain TEXT, published_at TIMESTAMPTZ, lang TEXT, title TEXT, description TEXT, content TEXT, raw JSONB, created_at TIMESTAMPTZ)
+Index: UNIQUE(url), index full-text sur to_tsvector(...), éventuellement GIN sur raw.
+Option B (local/dev) : SQLite + FTS5 + JSON
+
+Super pour prototyper: un fichier .db (ignoré par git) + FTS5 pour la recherche texte.
+Tu gardes le JSON “raw” dans une colonne texte/JSON.
+Option C (gros raw) : Postgres + stockage objet (S3/MinIO)
+
+Tu stockes les gros documents bruts (WARC/HTML/JSON compressé) dans MinIO.
+Postgres stocke seulement: métadonnées + pointeur (s3_key) + article_id.
+C’est le meilleur compromis “pas de fichiers JSON dans le repo” + reproductibilité.
+Si tu veux, je peux te préparer un docker-compose.yml (Postgres + Qdrant + MinIO) et un petit script d’ingestion ingest_to_postgres.py qui prend ton merged_dataset.json/jsonl et remplit la table (avec id stable + raw JSONB).
+
+
+
+
+
+
+
+
+
+------------------------------------
+
+
+# 2) Lancer PostgreSQL (Docker)
+docker run -d --name pfe-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=pfe_news \
+  -p 5432:5432 postgres:16
+
+# 3) Lancer Qdrant (Docker)
+docker run -d --name pfe-qdrant \
+  -p 6333:6333 \
+  qdrant/qdrant
+
+# 4) (Optionnel pour writing) Lancer Ollama + modèle
+ollama serve
+ollama pull qwen3.5:9b-q4_K_M
+
+# 5) Normaliser et charger les articles en DB
+python main/ingestiontable/Normalisation_dataset.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news
+
+# 6) Retrieval -> PostgreSQL (récupère retrieval_run_id affiché)
+python main/news_reco.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --interest "IA et les LLMs" --interest "SpaceX" --topk 20
+
+# 7) Rerank -> PostgreSQL (remplacer XXX par retrieval_run_id)
+python main/reranker.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --retrieval-run-id XXX --topn 10 --hydrate
+
+# 8) Writing -> PostgreSQL par batch de 10 intérêts (remplacer YYY par rerank_run_id)
+python main/writing.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --rerank-run-id YYY \
+  --model qwen3.5:9b-instruct-q4_K_M \
+  --interest-batch-size 10 --offset 0 --top_n 10
+
+# 9) Batch suivant (10 intérêts suivants)
+python main/writing.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --rerank-run-id YYY \
+  --model qwen3.5:9b-q4_K_M \
+  --interest-batch-size 10 --offset 0 --top_n 10
+
+
+
+
+
+
+  yohan@neon:~/Downloads$ docker ps
+CONTAINER ID   IMAGE           COMMAND                  CREATED          STATUS          PORTS                                         NAMES
+e01555ed3c10   qdrant/qdrant   "./entrypoint.sh"        38 minutes ago   Up 38 minutes   0.0.0.0:6333->6333/tcp, [::]:6333->6333/tcp   pfe-qdrant
+9b89bbbd5dd8   postgres:16     "docker-entrypoint.s…"   39 minutes ago   Up 39 minutes   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp   pfe-postgres
+yohan@neon:~/Downloads$ 
