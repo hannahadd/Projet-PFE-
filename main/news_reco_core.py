@@ -521,7 +521,6 @@ def compute_final_scores(
     candidates: Dict[str, Article],
     user: UserProfile,
     bm25_scores: Dict[str, float],
-    tau_hours: float = 336.0,
     min_sim: float = 0.0,
     min_bm25: float = 0.0,
     dense_only: bool = False
@@ -571,7 +570,6 @@ def retrieve_feed(
     bm25_k: int = 250,
     days: int = 14,
     top_k: int = 20,
-    tau_hours: float = 336.0,
     use_rerank: bool = True,
     lang_filter: Optional[Set[str]] = None,
     min_sim: float = 0.0,
@@ -635,7 +633,6 @@ def retrieve_feed(
         candidates,
         user,
         bm25_scores,
-        tau_hours=tau_hours,
         min_sim=min_sim,
         min_bm25=min_bm25,
         dense_only=dense_only,

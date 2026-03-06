@@ -86,7 +86,6 @@ def _build_export_blocks(
     tags: List[str],
     days: int,
     topk: int,
-    tau_hours: float,
     lang_filter: Optional[Set[str]],
     min_sim: float,
     min_bm25: float,
@@ -116,7 +115,6 @@ def _build_export_blocks(
             bm25_k=bm25_k,
             days=days,
             top_k=topk,
-            tau_hours=tau_hours,
             use_rerank=True,
             lang_filter=lang_filter,
             min_sim=min_sim,
@@ -167,7 +165,6 @@ def _build_export_blocks(
             bm25_k=bm25_k,
             days=days,
             top_k=topk,
-            tau_hours=tau_hours,
             use_rerank=True,
             lang_filter=lang_filter,
             min_sim=min_sim,
@@ -216,7 +213,6 @@ def main() -> int:
     parser.add_argument("--reindex", action="store_true")
     parser.add_argument("--lang", default=None)
     parser.add_argument("--days", type=int, default=100)
-    parser.add_argument("--tau-hours", type=float, default=336.0)
     parser.add_argument("--min-sim", type=float, default=0.15)
     parser.add_argument("--min-bm25", type=float, default=0.05)
     parser.add_argument("--dense-only", action="store_true")
@@ -295,7 +291,6 @@ def main() -> int:
         tags=tags,
         days=int(args.days),
         topk=int(args.topk),
-        tau_hours=float(args.tau_hours),
         lang_filter=lang_filter,
         min_sim=float(args.min_sim),
         min_bm25=float(min_bm25),
@@ -318,7 +313,6 @@ def main() -> int:
             "aggregate": bool(args.aggregate),
             "tags": tags,
             "lang": args.lang,
-            "tau_hours": float(args.tau_hours),
             "min_sim": float(args.min_sim),
             "min_bm25": float(min_bm25),
             "interests": interests,
