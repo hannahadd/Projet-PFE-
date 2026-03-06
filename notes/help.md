@@ -15,3 +15,40 @@ Successfully installed pip-25.0.1
 
 ```
 
+----------------------------------------------------------------------
+
+docker pull qdrant/qdrant:latest
+
+docker run -d --name qdrant \
+  -p 6333:6333 -p 6334:6334 \
+  -v "$(pwd)/qdrant_storage:/qdrant/storage" \
+  qdrant/qdrant:latest
+
+
+--------------------------------------------------
+
+
+# Tes intérêts explicites (toujours 20 chacun => 100)
+python src/news_reco.py --dense-only --days 100 --topk 20 \
+  --interest "Guerres et conflits internationaux" \
+  --interest "IA et les LLMs" \
+  --interest "Politique Française" \
+  --interest "SpaceX" \
+  --interest "Apple"
+
+
+
+  python src/news_reco.py --dense-only --days 100 --topk 20
+
+  ython src/news_reco.py --max-articles 200 --reindex --dense-only
+
+  --aggregate
+
+
+
+Dans news_reco.py, j’ai:
+mis tau_hours par défaut à 336.0 (14 jours)
+ajusté le score en --dense-only à: 0.50 * sim + 0.45 * recency + 0.05 * quality
+ajouté un flag CLI --tau-hours pour le régler
+
+  ----------------------------------------------------

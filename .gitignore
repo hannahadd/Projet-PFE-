@@ -1,0 +1,67 @@
+############################
+# Python / tooling
+############################
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg-info/
+build/
+dist/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+############################
+# Environments
+############################
+.venv/
+.venv*/
+.env
+.env.*
+*.env
+
+############################
+# Jupyter
+############################
+.ipynb_checkpoints/
+
+############################
+# OS / editor
+############################
+.DS_Store
+.vscode/
+
+############################
+# Project data / artifacts
+############################
+# Qdrant local storage (huge, machine-specific)
+qdrant_data/
+projetPFE/qdrant_data/
+
+# Generated outputs
+outputs/
+projetPFE/outputs/
+projetPFE/outputsOld/
+
+# WARC archives / raw crawls
+projetPFE/ccnews_warc_last5/
+**/*.warc
+**/*.warc.gz
+
+# Datasets / merged exports (avoid committing raw corpora)
+**/*.jsonl
+**/merged_dataset.json
+
+# Retrieval / rerank exports (move these to outputs/ ideally)
+**/*candidate*.json
+**/*candidates*.json
+**/*rerank*.json
+
+# Local DB files
+**/*.sqlite
+**/*.sqlite3
+**/*.db
