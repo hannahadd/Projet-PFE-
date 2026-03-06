@@ -542,8 +542,6 @@ def compute_final_scores(
             sim_vec = 0.0
 
         bm25_norm = 0.0 if dense_only else (bm25_scores.get(aid, 0.0) / (max_bm25 + 1e-9))
-        rec = recency_boost(a.date, tau_hours=tau_hours)
-
         # quality placeholder (you can plug real signals later)
         quality = 1.0
 
@@ -552,15 +550,13 @@ def compute_final_scores(
 
         if dense_only:
             score = (
-                0.50 * sim_vec
-                + 0.45 * rec
+                0.95 * sim_vec
                 + 0.05 * quality
             )
         else:
             score = (
-                0.55 * sim_vec
-                + 0.25 * bm25_norm
-                + 0.15 * rec
+                0.75 * sim_vec
+                + 0.20 * bm25_norm
                 + 0.05 * quality
             )
         out[aid] = float(score)
@@ -582,6 +578,8 @@ def retrieve_feed(
     min_bm25: float = 0.0,
     dense_only: bool = False,
     scores_out: Optional[Dict[str, float]] = None,
+    mmr_lambda_div: float = 0.78,
+    mmr_near_dup_threshold: float = 0.92,
 ) -> List[Article]:
 
     # 1) Candidate generation
@@ -667,8 +665,8 @@ def retrieve_feed(
         cand_scores=scores,
         cand_vecs=cand_vecs,
         top_k=top_k,
-        lambda_div=0.78,
-        near_dup_threshold=0.92
+        lambda_div=mmr_lambda_div,
+        near_dup_threshold=mmr_near_dup_threshold,
     )
 
     if scores_out is not None:

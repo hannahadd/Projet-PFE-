@@ -30,6 +30,52 @@ def _load_src_news_module():
 core = _load_src_news_module()
 
 
+INTEREST_EXPANSIONS: Dict[str, List[str]] = {
+    "IA et les LLMs": [
+        "IA et les LLMs",
+        "artificial intelligence",
+        "large language models",
+        "generative AI",
+        "Qwen OpenAI Anthropic agent workflows",
+    ],
+    "SpaceX": [
+        "SpaceX",
+        "Starship",
+        "Starlink",
+        "launch vehicle booster orbital",
+    ],
+    "Apple": [
+        "Apple",
+        "MacBook iPhone iOS",
+        "Cupertino privacy",
+    ],
+    "Politique Française": [
+        "Politique Française",
+        "French politics",
+        "France gouvernement Assemblée nationale",
+        "Macron budget referendum",
+    ],
+    "Guerres et conflits internationaux": [
+        "Guerres et conflits internationaux",
+        "international conflicts geopolitics",
+        "Middle East Ukraine Sudan Iran",
+    ],
+}
+
+
+def _expand_interest(interest: str) -> List[str]:
+    base = (interest or "").strip()
+    if not base:
+        return []
+    expanded = INTEREST_EXPANSIONS.get(base, [base])
+    out: List[str] = []
+    for s in expanded:
+        s2 = str(s).strip()
+        if s2 and s2 not in out:
+            out.append(s2)
+    return out
+
+
 def _build_export_blocks(
     interests: List[str],
     aggregate: bool,
@@ -45,20 +91,29 @@ def _build_export_blocks(
     min_sim: float,
     min_bm25: float,
     dense_only: bool,
+    dense_per_center: int,
+    bm25_k: int,
+    mmr_lambda_div: float,
+    mmr_near_dup_threshold: float,
 ) -> List[Dict[str, Any]]:
     blocks: List[Dict[str, Any]] = []
 
     if aggregate or len(interests) <= 1:
-        user = core.UserProfile(interests_text=interests, interests_tags=tags)
-        user.build_from_onboarding(embedder.encode, k_max=5)
+        expanded: List[str] = []
+        for interest in interests:
+            expanded.extend(_expand_interest(interest))
+        if not expanded:
+            expanded = interests
+        user = core.UserProfile(interests_text=expanded, interests_tags=tags)
+        user.build_from_onboarding(embedder.encode, k_max=min(8, len(expanded) or 1))
         scores_map: Dict[str, float] = {}
         feed = core.retrieve_feed(
             qdrant_index=qindex,
             bm25_index=bm25,
             id_to_article=id_to_article,
             user=user,
-            dense_per_center=250,
-            bm25_k=250,
+            dense_per_center=dense_per_center,
+            bm25_k=bm25_k,
             days=days,
             top_k=topk,
             tau_hours=tau_hours,
@@ -68,6 +123,8 @@ def _build_export_blocks(
             min_bm25=min_bm25,
             dense_only=dense_only,
             scores_out=scores_map,
+            mmr_lambda_div=mmr_lambda_div,
+            mmr_near_dup_threshold=mmr_near_dup_threshold,
         )
         blocks.append(
             {
@@ -97,16 +154,17 @@ def _build_export_blocks(
         return blocks
 
     for interest in interests:
-        user = core.UserProfile(interests_text=[interest], interests_tags=tags)
-        user.build_from_onboarding(embedder.encode, k_max=1)
+        expanded = _expand_interest(interest)
+        user = core.UserProfile(interests_text=expanded, interests_tags=tags)
+        user.build_from_onboarding(embedder.encode, k_max=min(6, len(expanded) or 1))
         scores_map: Dict[str, float] = {}
         feed = core.retrieve_feed(
             qdrant_index=qindex,
             bm25_index=bm25,
             id_to_article=id_to_article,
             user=user,
-            dense_per_center=250,
-            bm25_k=250,
+            dense_per_center=dense_per_center,
+            bm25_k=bm25_k,
             days=days,
             top_k=topk,
             tau_hours=tau_hours,
@@ -116,6 +174,8 @@ def _build_export_blocks(
             min_bm25=min_bm25,
             dense_only=dense_only,
             scores_out=scores_map,
+            mmr_lambda_div=mmr_lambda_div,
+            mmr_near_dup_threshold=mmr_near_dup_threshold,
         )
         blocks.append(
             {
@@ -162,6 +222,10 @@ def main() -> int:
     parser.add_argument("--dense-only", action="store_true")
     parser.add_argument("--aggregate", action="store_true")
     parser.add_argument("--topk", type=int, default=20)
+    parser.add_argument("--dense-per-center", type=int, default=400)
+    parser.add_argument("--bm25-k", type=int, default=400)
+    parser.add_argument("--mmr-lambda", type=float, default=0.82)
+    parser.add_argument("--mmr-near-dup-threshold", type=float, default=0.92)
     args = parser.parse_args()
 
     store = PostgresStore(args.db_url)
@@ -236,6 +300,10 @@ def main() -> int:
         min_sim=float(args.min_sim),
         min_bm25=float(min_bm25),
         dense_only=bool(args.dense_only),
+        dense_per_center=int(args.dense_per_center),
+        bm25_k=int(args.bm25_k),
+        mmr_lambda_div=float(args.mmr_lambda),
+        mmr_near_dup_threshold=float(args.mmr_near_dup_threshold),
     )
 
     run_id = store.create_retrieval_run(
