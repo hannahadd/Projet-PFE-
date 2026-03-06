@@ -1,0 +1,20 @@
+{
+  "interest": "Apple",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-06T21:56:55.623371+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Apple stock surge",
+    "iPhone launch event",
+    "Tim Cook interview",
+    "Apple Park campus",
+    "iOS update release",
+    "Apple Watch features",
+    "MacBook Pro review",
+    "Apple Services revenue",
+    "Apple CEO salary",
+    "Apple retail stores"
+  ],
+  "raw_output": "Apple stock surge\niPhone launch event\nTim Cook interview\nApple Park campus\niOS update release\nApple Watch features\nMacBook Pro review\nApple Services revenue\nApple CEO salary\nApple retail stores"
+}

@@ -31,34 +31,40 @@ core = _load_src_news_module()
 
 
 INTEREST_EXPANSIONS: Dict[str, List[str]] = {
-    "IA et les LLMs": [
-        "IA et les LLMs",
-        "artificial intelligence",
-        "large language models",
-        "generative AI",
-        "Qwen OpenAI Anthropic agent workflows",
+    "AI and LLMs": [
+        "Artificial Intelligence news",
+        "Large language models usage",
+        "Generative AI capabilities",
+        "Deep learning algorithms",
+        "Machine intelligence ethics",
     ],
     "SpaceX": [
-        "SpaceX",
-        "Starship",
-        "Starlink",
-        "launch vehicle booster orbital",
+        "SpaceX launch schedule",
+        "SpaceX rocket failures",
+        "SpaceX Starship tests",
+        "SpaceX Elon Musk news",
+        "SpaceX satellite launches",
     ],
     "Apple": [
-        "Apple",
-        "MacBook iPhone iOS",
-        "Cupertino privacy",
+        "Apple stock price",
+        "Apple product launch",
+        "Apple earnings report",
+        "Apple CEO interview",
+        "Apple supply chain",
     ],
-    "Politique Française": [
-        "Politique Française",
-        "French politics",
-        "France gouvernement Assemblée nationale",
-        "Macron budget referendum",
+    "french politics": [
+        "French election results",
+        "National parliamentary votes",
+        "Government formation process",
+        "European political alliances",
+        "Legislative committee reports",
     ],
-    "Guerres et conflits internationaux": [
-        "Guerres et conflits internationaux",
-        "international conflicts geopolitics",
-        "Middle East Ukraine Sudan Iran",
+    "war and international conflict": [
+        "War and peace treaties",
+        "Military intervention operations",
+        "International conflict resolutions",
+        "Arms control agreements",
+        "Global security crises",
     ],
 }
 
@@ -269,9 +275,9 @@ def main() -> int:
     interests = [i for i in (args.interest or []) if i and i.strip()]
     if not interests:
         interests = [
-            "Guerres et conflits internationaux",
-            "IA et les LLMs",
-            "Politique Française",
+            "war and international conflict",
+            "AI and LLMs",
+            "french politics",
             "SpaceX",
             "Apple",
         ]
