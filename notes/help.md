@@ -174,7 +174,7 @@ python main/writing.py \
 
 
 
-
+---------------------------------------------------------
 
 
   yohan@neon:~/Downloads$ docker ps
@@ -182,3 +182,22 @@ CONTAINER ID   IMAGE           COMMAND                  CREATED          STATUS 
 e01555ed3c10   qdrant/qdrant   "./entrypoint.sh"        38 minutes ago   Up 38 minutes   0.0.0.0:6333->6333/tcp, [::]:6333->6333/tcp   pfe-qdrant
 9b89bbbd5dd8   postgres:16     "docker-entrypoint.s…"   39 minutes ago   Up 39 minutes   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp   pfe-postgres
 yohan@neon:~/Downloads$ 
+
+
+
+yohan@neon:~/Desktop/note$ docker ps -a
+CONTAINER ID   IMAGE                  COMMAND                  CREATED        STATUS                       PORTS                              NAMES
+e01555ed3c10   qdrant/qdrant          "./entrypoint.sh"        14 hours ago   Exited (255) 2 minutes ago   0.0.0.0:6333->6333/tcp, 6334/tcp   pfe-qdrant
+9b89bbbd5dd8   postgres:16            "docker-entrypoint.s…"   14 hours ago   Exited (255) 2 minutes ago   0.0.0.0:5432->5432/tcp             pfe-postgres
+a0038f668175   qdrant/qdrant:latest   "./entrypoint.sh"        39 hours ago   Exited (143) 14 hours ago                                       qdrant
+03ff90fce65e   hello-world            "/hello"                 39 hours ago   Exited (0) 39 hours ago                                         objective_galois
+yohan@neon:~/Desktop/note$ docker start pfe-qdrant
+pfe-qdrant
+yohan@neon:~/Desktop/note$ docker start pfe-postgres
+pfe-postgres
+yohan@neon:~/Desktop/note$ docker ps
+CONTAINER ID   IMAGE           COMMAND                  CREATED        STATUS          PORTS                                         NAMES
+e01555ed3c10   qdrant/qdrant   "./entrypoint.sh"        14 hours ago   Up 14 seconds   0.0.0.0:6333->6333/tcp, [::]:6333->6333/tcp   pfe-qdrant
+9b89bbbd5dd8   postgres:16     "docker-entrypoint.s…"   14 hours ago   Up 5 seconds    0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp   pfe-postgres
+yohan@neon:~/Desktop/note$ 
+

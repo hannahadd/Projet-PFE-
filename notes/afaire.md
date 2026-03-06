@@ -4,3 +4,6 @@ faire une validation qui verifie si mes faux articles sont présent à chaques e
 regarder comment inserer des articles de tests 
 
 site web qui tire les summary de postgres 
+
+
+probleme des doublons
