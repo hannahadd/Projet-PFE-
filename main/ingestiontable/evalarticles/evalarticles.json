@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "description": "Eval set for retrieval/rerank by interest",
+  "interest_aliases": {
+    "IA et les LLMs": [
+      "IA",
+      "LLM",
+      "AI et LLMs",
+      "ai and llms"
+    ],
+    "SpaceX": [
+      "spacex",
+      "space x",
+      "starship"
+    ],
+    "Apple": [
+      "apple"
+    ],
+    "Politique Française": [
+      "politique francaise",
+      "france politics"
+    ],
+    "Guerres et conflits internationaux": [
+      "conflits internationaux",
+      "geopolitique",
+      "international conflicts"
+    ]
+  },
+  "articles": [
+    {
+      "title": "Qwen3.5 launches as Alibaba bets on more efficient multimodal agents",
+      "content": "Qwen3.5 launches as Alibaba bets on more efficient multimodal agents\n\n(This is a fictional article written for testing purposes. The facts and dates are aligned with public announcements and reports.)\n\nAlibaba officially unveiled Qwen3.5 on February 16, 2026, presenting it as a new generation of models built for the “agent era,” meaning AI systems designed not only to converse, but also to plan, execute tasks, and interact with software environments. The company says the new release focuses on a better capability-to-inference-cost ratio, a key issue as the global AI race increasingly revolves around both performance and efficiency.\n\nAt the center of the announcement is Qwen3.5-397B-A17B, an open-weight Mixture-of-Experts model with 397 billion total parameters, 17 billion of which are active during inference. In practical terms, the MoE design activates only part of the network for each token, reducing compute costs while preserving the scale and expressiveness of a much larger model.\n\nAlibaba highlighted two main promises during the launch. First, it described Qwen3.5 as significantly cheaper to run than its predecessor, with internal messaging pointing to roughly a 60% reduction in usage cost. Second, the company claimed the model offers a major leap in throughput, with some internal scenarios showing up to eight times more processing capacity. The broader strategic message is clear: Qwen3.5 is meant to be agentic, capable of taking actions inside mobile and desktop applications through visual understanding, moving beyond the classic “assistant that explains” toward an “assistant that does.”\n\nOn the technical side, Alibaba emphasizes a unified vision-language backbone capable of handling text, images, and video, along with a very large native context window of 262,144 tokens on some product materials. The company also stresses support for tool use, retrieval-augmented generation, and integration into broader agent workflows. This reflects a wider trend across the AI industry, where labs are increasingly optimizing models not just for chat, but for product integration, automation, and real-world task execution.\n\nThe timing is also shaped by fierce competition. In China, the market for large models and AI assistants is becoming more crowded, with players such as ByteDance pushing their own ecosystems aggressively. Alibaba appears intent on appealing to both enterprises and developers by arguing that models should be judged not only by benchmark scores, but also by cost, latency, and deployability.\n\nThe real test, however, will be adoption. Over the coming weeks, observers will be watching to see whether Qwen3.5 becomes a practical base for real agent-ready systems rather than just a strong demo model. Its success will likely depend on whether it can reliably power UI-driven assistants, automation pipelines, and business deployments under real constraints such as GPU availability, security requirements, and operational cost.",
+      "published_date": "2026-02-16 10:12:05",
+      "source": "tech-synthese.fr",
+      "url": "https://tech-synthese.fr/articles/2026-02-16-sortie-qwen35-agents-multimodaux",
+      "article_id": "97482f14-c881-c079-0630-4f125bd3db6f",
+      "expected_interest": "IA et les LLMs",
+      "tags": [
+        "ia",
+        "llm",
+        "agentic"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "Starship: Flight 12 draws closer as Ship 39 enters cryogenic testing and Booster 19 moves forward",
+      "content": "Starship: Flight 12 draws closer as Ship 39 enters cryogenic testing and Booster 19 moves forward\n\n(This is a fictional article written for testing purposes. The facts and dates are aligned with publicly available information.)\n\nPreparations for Starship Flight 12 are accelerating at Starbase, Texas, as Ship 39, described as the first vehicle of the new V3 generation, has been moved to the Masseys test site for cryogenic testing. The goal of this campaign is to validate the ship’s tank structure and overall integrity before the vehicle proceeds to the more familiar sequence of ground tests that typically lead to a static fire.\n\nAccording to specialized observers and tracking reports, Ship 39 had remained fully stacked in Mega Bay 2 for several months while the updated testing infrastructure was being prepared. What makes this campaign notable is the new equipment installed at Masseys, including a truss system intended not only for cryogenic proof testing of the tanks, but also for mechanical checks involving the vehicle’s forward and aft flaps. In other words, SpaceX is not just chilling the vehicle’s structure, but also evaluating whether important aerodynamic control surfaces behave as expected under more realistic conditions.\n\nThis testing phase fits into a broader development path. SpaceX is trying to push Starship toward increasingly operational flights, especially in support of future orbital refueling demonstrations. In that context, observers have paid attention to possible docking-related hardware and plumbing updates on Ship 39, which may hint at how the company is preparing the platform for more advanced mission profiles.\n\nBooster 19 is progressing on a parallel track. After completing its own cryogenic testing campaign in early February, it was returned to Mega Bay 1 for preparations leading to static-fire operations. Some of its engines have already been installed, although the exact integration pace remains fluid. One likely scenario is a gradual test sequence beginning with propellant loading tests, spin-prime operations, and partial static fires before eventually moving toward a full-up firing with a more complete engine set.\n\nThe road to Flight 12 still depends on several milestones. Ship 39 must complete cryogenic validation, receive its engine installation, and pass its own static fire campaign. Booster 19 must do the same. In parallel, the launch site systems themselves, including water deluge infrastructure and other pad hardware, must also be ready. Finally, a new launch still depends on regulatory approvals, which remain a recurring factor in Starship scheduling.\n\nCurrent tracking discussions have pointed to March 2026 as a possible target period for Flight 12, but the program’s history has shown that timelines can shift quickly as new data comes in. For enthusiasts and industry watchers, the significance of Flight 12 lies not just in another launch attempt, but in whether SpaceX can demonstrate a smoother progression from vehicle assembly to testing to flight. If Ship 39 and Booster 19 move through their remaining checkpoints without major setbacks, Flight 12 could mark another important step in Starship’s transition toward more mature and operationally relevant missions.",
+      "published_date": "2026-02-27 21:44:18",
+      "source": "orbite-hebdo.net",
+      "url": "https://orbite-hebdo.net/spacex/2026-02-27-starship-vol12-ship39-booster19",
+      "article_id": "a84b60a3-2ce7-202d-1370-c9152fe15ca4",
+      "expected_interest": "SpaceX",
+      "tags": [
+        "spacex",
+        "starship",
+        "space"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "Iran: Death of Ayatollah Khamenei in Israeli-American strikes raises fears of retaliation",
+      "content": "Iran: Death of Ayatollah Khamenei in Israeli-American strikes raises fears of retaliation\n\n(This is a fictional article written for testing purposes. The facts and dates are aligned with public reporting and cited documents.)\n\nThe confirmation from Tehran that Supreme Leader Ali Khamenei is dead has sent shockwaves through diplomatic and security circles around the world. According to information cited by multiple international outlets, Khamenei was killed on Saturday, February 28, 2026, during joint strikes carried out by Israel and the United States. The event, extraordinary in both symbolic and political terms, comes amid a broader regional escalation and has sharply intensified fears of retaliation, whether directly by Iran or through allied groups operating in the region and beyond.\n\nIn Washington, an intelligence assessment referenced in the press warns that the risk of attacks against U.S. interests has increased. The document, attributed to the Department of Homeland Security’s Office of Intelligence and Analysis, reportedly suggests that a large-scale physical attack on U.S. soil remains unlikely in the immediate term. However, it also underscores the continued danger of targeted actions and the possibility that calls for retaliation could intensify in the aftermath of Khamenei’s death.\n\nOne of the most plausible short-term scenarios, according to that reporting, involves low-level cyber operations conducted by Iran-aligned hacktivists. These could include website defacements, distributed denial-of-service attacks, or opportunistic intrusions aimed at symbolic institutions, companies, or infrastructure. U.S. authorities are said to be increasing vigilance and coordination in response, especially given the heightened tensions already affecting security planning.\n\nBeyond the cyber domain, the regional consequences are considered even more significant. The military exchange has deepened an already unstable situation across the Middle East, with mounting concern that the conflict could spread into new theaters. Energy markets and global shipping routes are also under pressure, as the possibility of a prolonged confrontation raises immediate questions about oil flows, maritime security, and global logistics costs.\n\nKhamenei’s death also opens a major political question inside Iran itself: what comes next. Even without making firm predictions about the succession process, analysts broadly expect a period of institutional uncertainty, internal maneuvering, and intensified rhetoric. Moments like this can quickly become self-reinforcing crises, with rival actors seeking to restore credibility, deterrence, or domestic legitimacy through further action.\n\nCalls for de-escalation are multiplying in diplomatic circles, but the space for mediation appears narrow. The crisis is now unfolding on at least two fronts at once: immediate security management, especially around cyber threats and retaliation risks, and the broader effort to prevent a deeper regional war. In such an environment, even a limited or ambiguous incident could rapidly become a trigger for another round of escalation.",
+      "published_date": "2026-03-02 23:18:41",
+      "source": "monde-en-direct.info",
+      "url": "https://monde-en-direct.info/2026/03/02/iran-khamenei-mort-frappes-risque-riposte",
+      "article_id": "4e4ebd55-08fb-340d-785d-b0213664f77f",
+      "expected_interest": "Guerres et conflits internationaux",
+      "tags": [
+        "conflit",
+        "geopolitique"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "Apple unveils the MacBook Neo, a $599 laptop powered by the A18 Pro chip",
+      "content": "Apple unveils the MacBook Neo, a $599 laptop powered by the A18 Pro chip\n\n(This is a fictional article written for testing purposes. The specifications and dates are aligned with the official announcement.)\n\nApple introduced the MacBook Neo on March 4, 2026, presenting it as the most affordable Mac laptop in its lineup. With a starting price of $599, and $499 for education customers, the device is clearly aimed at students, families, and everyday users who want access to macOS without stepping into the company’s higher-end pricing tiers. At the same time, Apple is positioning the machine as a serious gateway into its broader ecosystem.\n\nThe most striking technical choice is the use of the A18 Pro chip, a move that blurs the line between Apple’s iPhone-class silicon and the processors traditionally associated with the Mac. Apple says the chip enables silent fanless operation while still delivering strong performance for common productivity tasks. The company also emphasizes on-device AI features, particularly through the Neural Engine and functions tied to Apple Intelligence.\n\nThe MacBook Neo features a 13-inch Liquid Retina display with a resolution of 2408 by 1506, 500 nits of brightness, and support for one billion colors. Apple is clearly trying to preserve one of its usual strengths—display quality—even in a lower-cost machine, arguing that users should still get sharp text, vivid media, and an overall premium visual experience.\n\nDesign-wise, the laptop follows Apple’s familiar formula: an aluminum enclosure, rounded corners, and a lightweight chassis weighing 2.7 pounds, or about 1.22 kilograms. It is available in four colors—silver, blush, citrus, and indigo—with matching wallpapers designed to reinforce the product’s visual identity. Apple also highlights battery life of up to 16 hours, a major selling point for mobile users.\n\nFor audio and video, the MacBook Neo includes a 1080p FaceTime HD camera, beamforming microphones, and speakers with support for Spatial Audio and Dolby Atmos. Apple is pitching it as a more complete everyday computer for video calls, streaming, and light creative work, while also including a Magic Keyboard and a large Multi-Touch trackpad. Some configurations also feature Touch ID for authentication and purchases.\n\nConnectivity is more limited, in line with Apple’s usual minimalist approach. The laptop comes with two USB-C ports, and one notable detail is that external display support is tied to the USB 3 port on the left side. This kind of design choice may frustrate power users, but it reflects Apple’s willingness to prioritize thinness and simplicity over maximum flexibility in its entry-level hardware.\n\nPreorders opened on March 4, with first deliveries and in-store availability scheduled for Wednesday, March 11, across multiple countries and regions. With the MacBook Neo, Apple is sending a strategic signal: it wants to make the Mac platform more accessible than before, using an efficient chip and aggressive pricing to draw more users into the Apple ecosystem.",
+      "published_date": "2026-03-04 19:06:22",
+      "source": "pomme-magazine.fr",
+      "url": "https://pomme-magazine.fr/2026/03/04/apple-macbook-neo-a18-pro-599",
+      "article_id": "7fdcd400-dfa4-e9bf-240b-c10fa80b3d38",
+      "expected_interest": "Apple",
+      "tags": [
+        "apple",
+        "macbook",
+        "privacy"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "Macron annonce l’envoi du porte-avions Charles de Gaulle en Méditerranée sur fond de crise au Moyen-Orient",
+      "content": "Macron annonce l’envoi du porte-avions Charles de Gaulle en Méditerranée sur fond de crise au Moyen-Orient\n\n(Ceci est un article fictif rédigé pour des tests. Les déclarations et dates sont alignées sur des dépêches publiques.)\n\nDans une allocution télévisée, le président Emmanuel Macron a annoncé le 3 mars 2026 le déploiement du porte-avions Charles de Gaulle en Méditerranée, dans un contexte d’escalade militaire au Moyen-Orient et de fortes tensions sur les routes maritimes. L’exécutif justifie cette décision par la nécessité de contribuer à la sécurisation du trafic commercial et énergétique, alors que plusieurs passages stratégiques seraient menacés, voire fermés.\n\nSelon les déclarations rapportées par la presse internationale, l’Élysée considère que la situation a franchi un seuil critique : le détroit d’Ormuz serait fermé, et les routes du canal de Suez et de la mer Rouge subiraient des perturbations liées à l’extension du conflit. Macron a insisté sur l’impact direct pour l’Europe et pour la France, en évoquant une désorganisation des échanges internationaux et des pressions sur les prix de l’énergie.\n\nLe chef de l’État a également indiqué que la France renforçait sa présence dans la région via d’autres moyens : l’envoi d’une frégate vers Chypre, l’emploi d’avions Rafale dans le dispositif, ainsi que des interceptions de drones au-dessus d’États du Golfe alliés. Macron a rappelé l’existence d’accords de défense liant la France au Qatar, au Koweït et aux Émirats arabes unis, soulignant que ces partenaires seraient particulièrement exposés et que Paris leur devait solidarité.\n\nSur le plan consulaire, l’exécutif affirme organiser des sorties de ressortissants souhaitant quitter la zone, avec des vols dédiés. En parallèle, la sécurité intérieure en France serait renforcée sur certains sites, afin de prévenir tout effet de ricochet sur le territoire national.\n\nLe discours présidentiel cherche un équilibre délicat : d’un côté, Macron affirme que l’Iran « porte une responsabilité première » dans l’enchaînement ayant mené aux opérations militaires américaines et israéliennes ; de l’autre, il déclare ne pas approuver le cadre de ces opérations, présentées comme conduites “en dehors du droit international”. Cette position vise à préserver une cohérence diplomatique tout en assumant une posture de protection des intérêts français et européens.\n\nL’envoi du Charles de Gaulle constitue un signal militaire et politique fort. Militaire, parce qu’un groupe aéronaval offre une palette de capacités (surveillance, dissuasion, protection de zone, projection aérienne) et une autonomie de manœuvre en mer. Politique, parce que le déploiement intervient au moment où les alliés occidentaux cherchent à coordonner leurs réponses face à une crise qui touche à la fois la sécurité, l’énergie et le commerce mondial.\n\nÀ court terme, l’efficacité de ce déploiement dépendra de la stabilisation des routes maritimes et de l’évolution de l’escalade. À moyen terme, il pose aussi la question de la durée : plus la crise s’installe, plus les engagements navals et aériens deviennent coûteux et exposés. Pour l’Élysée, le message est clair : Paris veut peser dans la gestion de la crise tout en affichant une ligne de “défense” et de protection des flux vitaux.",
+      "published_date": "2026-03-03 22:31:09",
+      "source": "republique-observateur.fr",
+      "url": "https://republique-observateur.fr/2026/03/03/macron-charles-de-gaulle-mediterranee-crise",
+      "article_id": "d97085a6-12bc-f668-a473-173f63b488c2",
+      "expected_interest": "Politique Française",
+      "tags": [
+        "france",
+        "politique"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "Sudan talks wobble as rival factions dispute control of a proposed humanitarian corridor",
+      "content": "Sudan talks wobble as rival factions dispute control of a proposed humanitarian corridor\n\n(This is a fictional article written for testing purposes. The scenario is invented but written to sound like a real wire report.)\n\nNegotiations aimed at opening a protected humanitarian corridor in Sudan hit a familiar stumbling block this week, as representatives linked to the Sudanese Armed Forces (SAF) and the Rapid Support Forces (RSF) clashed over who would secure key transit points and how inspections would be carried out. Mediators said the corridor — intended to move food, medical supplies, and fuel to several cut-off urban districts — remains \"technically feasible\" but politically fragile.\n\nThe proposal, discussed in a series of meetings hosted by regional diplomats, would establish timed windows for aid convoys to travel along a designated route under third-party monitoring. Humanitarian agencies briefed on the plan said it could reduce looting and arbitrary taxation of supplies if enforcement is credible. But both sides have accused the other of seeking a corridor that doubles as a resupply channel.\n\nAid officials described the negotiations as a high-stakes trade: limited guarantees in exchange for urgently needed access. One senior humanitarian coordinator said the priority is to stop preventable deaths from malnutrition and untreated illness, adding that \"the paperwork is moving faster than the security assurances.\" Multiple agencies warned that the upcoming weeks are critical as clinics report shortages of antibiotics and basic trauma care, while displacement camps expand.\n\nThe debate has centered on three issues: who screens cargo at checkpoints, whether armed escorts are allowed, and what happens when a convoy is delayed beyond its authorized time. A draft framework described by people familiar with the talks includes satellite tracking of aid trucks, a hotline to deconflict movements, and a public incident log meant to deter interference. Still, observers cautioned that such mechanisms require genuine buy-in.\n\nRegional capitals have pushed for a limited pilot convoy as proof of concept. If successful, the corridor could be expanded to include cross-river routes and additional distribution hubs. But diplomats acknowledged that the corridor’s survival depends less on the plan’s engineering than on whether commanders on the ground accept constraints.\n\nFor civilians, the stakes are immediate. Community leaders said families are reducing meals, selling household items, and avoiding travel after dark. \"We don’t need another announcement,\" one displaced resident said in a message relayed by an aid worker. \"We need the trucks to arrive.\"",
+      "published_date": "2026-03-05 09:22:11",
+      "source": "Global Conflict Monitor",
+      "url": "https://globalconflictmonitor.org/2026/03/05/sudan-humanitarian-corridor-talks-dispute",
+      "article_id": "07266503-4d7a-855a-9158-0e53a3c63eda",
+      "expected_interest": "Guerres et conflits internationaux",
+      "tags": [
+        "conflit",
+        "geopolitique"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "New benchmark claims to measure 'agent reliability' across long-context LLM workflows",
+      "content": "New benchmark claims to measure 'agent reliability' across long-context LLM workflows\n\n(This is a fictional article written for testing purposes.)\n\nA coalition of academic researchers and startup engineers released a new evaluation suite on March 2, 2026, designed to test whether large language models can behave like dependable software agents rather than persuasive chatbots. The benchmark, called RelayBench, focuses on multi-step tasks that require long-context memory, tool use, and error recovery — the kind of workflows companies increasingly want from LLM-based assistants.\n\nUnlike classic leaderboards that grade models on short-form Q&A or single-pass reasoning, RelayBench scores whether an agent can complete an end-to-end job under realistic constraints: incomplete documentation, ambiguous user instructions, rate-limited APIs, and a moving target of intermediate outputs. Tasks include triaging a noisy incident channel, drafting a fix plan from partial logs, scheduling follow-ups, and producing a final report that cites the correct artifacts.\n\nThe benchmark’s creators argue that the next bottleneck is not raw model intelligence but operational reliability. In an accompanying technical note, they describe common failure modes: agents that hallucinate tool outputs, agents that \"forget\" earlier constraints after a few steps, and agents that optimize for plausible text instead of verified state. RelayBench therefore includes explicit penalties for fabrications, unlogged assumptions, and missing citations.\n\nIn an early, self-reported test run (not independently verified in this fictional scenario), the team claims that models with strong long-context capabilities still struggle when forced to chain actions across multiple tools. \"They can explain what to do,\" said one contributor, \"but they drift when asked to do it repeatedly and keep a clean audit trail.\" The benchmark also tracks a measure it calls \"intervention rate\" — how often a human must step in to correct course.\n\nDevelopers are already discussing how to use RelayBench beyond bragging rights. One idea is to fine-tune agent policies on the suite’s \"failure replays,\" teaching systems to detect when they are uncertain, ask for missing info, or roll back to a last known good state. Another is to use the tasks as regression tests in CI pipelines, so that model or prompt changes don’t silently degrade behavior.\n\nRelayBench is open for submissions and includes a standardized harness for tool simulation, but the maintainers say they plan to add real integration tracks later. If the benchmark gains traction, it could shift the conversation from \"Which LLM is smartest?\" to \"Which agent breaks the least in production?\"",
+      "published_date": "2026-03-02 13:08:44",
+      "source": "AI Systems Weekly",
+      "url": "https://aisystemsweekly.com/2026/03/02/relaybench-agent-reliability-long-context",
+      "article_id": "180767ef-ebac-bb3e-dd71-0a0458f4f1e3",
+      "expected_interest": "IA et les LLMs",
+      "tags": [
+        "ia",
+        "llm",
+        "agentic"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "French parties clash over referendum proposal as budget talks tighten in Paris",
+      "content": "French parties clash over referendum proposal as budget talks tighten in Paris\n\n(This is a fictional article written for testing purposes.)\n\nFrance’s political temperature rose on March 4, 2026, after the government floated the idea of a limited referendum package tied to public spending reforms, triggering sharp reactions across the National Assembly. The proposal — framed by ministers as a way to \"rebuild consent\" around difficult budget choices — was immediately criticized by opponents who called it a tactical maneuver rather than a genuine consultation.\n\nGovernment officials speaking to reporters described the plan as a two-track strategy: negotiate a 2026 adjustment budget in parliament while offering voters a direct say on a narrower set of institutional and spending rules. Supporters argue that recurring deadlock has turned major reforms into procedural trench warfare, and that a referendum could reduce the incentive for parties to block measures simply to deny the executive a win.\n\nOpposition leaders pushed back on two fronts. On the left, critics said putting budget rules to a popular vote risks turning fiscal policy into a referendum on the president himself, and warned that complex trade-offs cannot be responsibly reduced to a yes/no ballot. On the right, lawmakers argued that the executive is trying to bypass parliament at the very moment it should be negotiating compromises.\n\nBehind the scenes, the budget talks have become more sensitive as ministries face pressure to trim spending without igniting a new wave of street protests. Public sector unions signaled they are watching closely for measures affecting pensions, public hiring, and hospital funding. Local officials, meanwhile, are lobbying against any cuts that would shift burdens onto municipalities.\n\nThe referendum idea also raised constitutional questions in this fictional scenario. Legal experts noted that France’s referendum mechanisms are powerful but politically risky, and that poorly framed questions can backfire by uniting disparate grievances into a single protest vote. Government allies argue that risk is precisely why the referendum would be limited in scope.\n\nFor now, the proposal remains at the level of political signaling rather than a finalized calendar. But even that signal has altered the negotiating landscape: it suggests the executive is willing to escalate if talks stall, while opponents suspect the threat of a referendum is meant to pressure wavering lawmakers.\n\nIn the coming days, party leaders are expected to meet to assess whether compromise is still possible. If not, France could be heading into a familiar cycle — high-stakes votes, procedural battles, and a public debate where the question is less about numbers than about legitimacy.",
+      "published_date": "2026-03-04 18:37:59",
+      "source": "Paris Policy Desk",
+      "url": "https://parispolicydesk.fr/2026/03/04/france-referendum-budget-talks-assembly",
+      "article_id": "18b72c49-340a-c03e-a13f-f5c1ef182b12",
+      "expected_interest": "Politique Française",
+      "tags": [
+        "france",
+        "politique"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "SpaceX pitches rapid-response Starlink terminals for emergency services in remote Europe",
+      "content": "SpaceX pitches rapid-response Starlink terminals for emergency services in remote Europe\n\n(This is a fictional article written for testing purposes.)\n\nSpaceX has begun quietly pitching a rapid-response version of its Starlink hardware to European emergency services, according to procurement documents and people familiar with the discussions in this fictional scenario. The concept is a ruggedized kit designed to be deployed in minutes by first responders, providing satellite connectivity in areas where storms, fires, or infrastructure failures disrupt cellular and fiber networks.\n\nThe proposed package would include a compact terminal, a hardened power module, and a preconfigured networking unit capable of prioritizing voice, telemetry, and incident command traffic. The aim is to address a recurring gap in disaster response: connectivity often collapses precisely when coordination is most needed. While standard Starlink terminals are already used by some organizations, the rapid-response kit would be positioned as a standardized, procurement-friendly solution with training materials and maintenance contracts.\n\nIn this fictional report, several regional authorities in mountainous and coastal zones expressed interest after recent winter storms caused prolonged outages. Officials said the key requirement is not peak bandwidth but predictable, low-friction deployment: \"If it needs an engineer, it fails the field test,\" one emergency coordinator said.\n\nSpaceX would frame the offering as complementary to national systems rather than competitive, emphasizing interoperability with existing radios and emergency platforms. The company would also highlight that the kits can be staged in vehicles and activated as a fallback link for command posts, temporary clinics, or evacuation centers.\n\nSkeptics, however, raised familiar concerns about dependence on a single private provider and about how priority access would be handled during large-scale emergencies. Procurement specialists also noted that public agencies will want clear data handling rules, service-level commitments, and contingency plans.\n\nIf adopted, the initiative would signal SpaceX’s continued push to move Starlink beyond consumer internet and into public-sector infrastructure. For European agencies, the attraction is simple: satellite connectivity is one of the few options that still works when everything else breaks — provided it is packaged in a way that fits the realities of a chaotic response environment.",
+      "published_date": "2026-03-01 07:12:26",
+      "source": "Orbital Infrastructure Journal",
+      "url": "https://orbitalinfrajournal.eu/2026/03/01/spacex-starlink-rapid-response-europe",
+      "article_id": "b8592e5f-2796-1057-c594-7e471cf154c9",
+      "expected_interest": "SpaceX",
+      "tags": [
+        "spacex",
+        "starship",
+        "space"
+      ],
+      "rank_target_max": 20
+    },
+    {
+      "title": "Apple to roll out 'Privacy Receipts' feature to show what apps accessed and why",
+      "content": "Apple to roll out 'Privacy Receipts' feature to show what apps accessed and why\n\n(This is a fictional article written for testing purposes.)\n\nApple is preparing a new transparency tool internally dubbed “Privacy Receipts,” according to people familiar with the matter in this fictional scenario, aiming to give users a clearer explanation of when apps access sensitive data and what triggered that access. The feature would expand on existing permission prompts by providing a time-stamped log — written in plain language — showing data categories (location, photos, microphone, contacts) and the app action that initiated the request.\n\nUnlike today’s periodic privacy summaries, Privacy Receipts would be designed to answer the question users actually ask: \"Why did this happen right now?\" For example, a receipt might show that a navigation app accessed location because a route was started, or that a messaging app accessed photos because an image picker was opened. The goal, Apple would argue, is to reduce permission fatigue by making access events understandable rather than alarming.\n\nThe feature would also reportedly introduce a “suspicious access” flagging system that highlights patterns inconsistent with typical use — such as repeated background microphone activation or frequent location checks outside of active sessions. Users could then revoke permissions, restrict background access, or request a one-time explanation prompt the next time the app tries again.\n\nDevelopers, in this invented story, would be required to include short “access reasons” in metadata submitted to App Review. That could create a stronger enforcement mechanism: if an app claims it uses location only for navigation but repeatedly accesses it in unrelated contexts, the receipts would make that mismatch visible to users and reviewers.\n\nPrivacy advocates would likely welcome the extra transparency, while some developers might worry about increased friction and user misunderstanding. Apple would counter that clarity builds trust, and that the receipts are meant to reduce false suspicion by connecting access events to user actions.\n\nIf released, Privacy Receipts would fit Apple’s broader narrative of differentiating its ecosystem through privacy and user control. The company has long used privacy as both policy and product, and this kind of feature would aim to turn a hidden technical reality — constant data access — into something users can actually see, interpret, and manage.",
+      "published_date": "2026-02-26 20:05:10",
+      "source": "Cupertino Ledger",
+      "url": "https://cupertinoledger.com/2026/02/26/apple-privacy-receipts-app-access-transparency",
+      "article_id": "d9095dac-36c2-d3e3-36c2-a5c5985ada2d",
+      "expected_interest": "Apple",
+      "tags": [
+        "apple",
+        "macbook",
+        "privacy"
+      ],
+      "rank_target_max": 20
+    }
+  ]
+}
