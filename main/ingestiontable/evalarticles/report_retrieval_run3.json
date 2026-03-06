@@ -1,15 +1,15 @@
 {
   "total_expected": 10,
-  "total_found_correct": 0,
-  "total_score": "0/10",
-  "total_ratio": 0.0,
-  "global_rank_score_avg": 0.0,
+  "total_found_correct": 7,
+  "total_score": "7/10",
+  "total_ratio": 0.7,
+  "global_rank_score_avg": 1.0,
   "by_interest": [
     {
       "interest": "Apple",
-      "score": "0/2",
-      "ratio": 0.0,
-      "rank_score_avg": 0.0,
+      "score": "2/2",
+      "ratio": 1.0,
+      "rank_score_avg": 1.0,
       "articles": [
         {
           "article_id": "7fdcd400-dfa4-e9bf-240b-c10fa80b3d38",
@@ -17,11 +17,11 @@
           "expected_interests": [
             "Apple"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "Apple",
+          "found_rank": 1,
+          "ok": true,
+          "rank_points": 1.0
         },
         {
           "article_id": "d9095dac-36c2-d3e3-36c2-a5c5985ada2d",
@@ -29,19 +29,19 @@
           "expected_interests": [
             "Apple"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "Apple",
+          "found_rank": 2,
+          "ok": true,
+          "rank_points": 1.0
         }
       ]
     },
     {
       "interest": "Guerres et conflits internationaux",
-      "score": "0/2",
-      "ratio": 0.0,
-      "rank_score_avg": 0.0,
+      "score": "1/2",
+      "ratio": 0.5,
+      "rank_score_avg": 1.0,
       "articles": [
         {
           "article_id": "4e4ebd55-08fb-340d-785d-b0213664f77f",
@@ -49,9 +49,9 @@
           "expected_interests": [
             "Guerres et conflits internationaux"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
+          "found": true,
+          "found_interest": "IA et les LLMs",
+          "found_rank": 2,
           "ok": false,
           "rank_points": 0.0
         },
@@ -61,19 +61,19 @@
           "expected_interests": [
             "Guerres et conflits internationaux"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "Guerres et conflits internationaux",
+          "found_rank": 1,
+          "ok": true,
+          "rank_points": 1.0
         }
       ]
     },
     {
       "interest": "IA et les LLMs",
-      "score": "0/2",
-      "ratio": 0.0,
-      "rank_score_avg": 0.0,
+      "score": "1/2",
+      "ratio": 0.5,
+      "rank_score_avg": 1.0,
       "articles": [
         {
           "article_id": "97482f14-c881-c079-0630-4f125bd3db6f",
@@ -81,9 +81,9 @@
           "expected_interests": [
             "IA et les LLMs"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
+          "found": true,
+          "found_interest": "Apple",
+          "found_rank": 21,
           "ok": false,
           "rank_points": 0.0
         },
@@ -93,19 +93,19 @@
           "expected_interests": [
             "IA et les LLMs"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "IA et les LLMs",
+          "found_rank": 1,
+          "ok": true,
+          "rank_points": 1.0
         }
       ]
     },
     {
       "interest": "Politique Française",
-      "score": "0/2",
-      "ratio": 0.0,
-      "rank_score_avg": 0.0,
+      "score": "1/2",
+      "ratio": 0.5,
+      "rank_score_avg": 1.0,
       "articles": [
         {
           "article_id": "d97085a6-12bc-f668-a473-173f63b488c2",
@@ -113,9 +113,9 @@
           "expected_interests": [
             "Politique Française"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
+          "found": true,
+          "found_interest": "Guerres et conflits internationaux",
+          "found_rank": 2,
           "ok": false,
           "rank_points": 0.0
         },
@@ -125,19 +125,19 @@
           "expected_interests": [
             "Politique Française"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "Politique Française",
+          "found_rank": 1,
+          "ok": true,
+          "rank_points": 1.0
         }
       ]
     },
     {
       "interest": "SpaceX",
-      "score": "0/2",
-      "ratio": 0.0,
-      "rank_score_avg": 0.0,
+      "score": "2/2",
+      "ratio": 1.0,
+      "rank_score_avg": 1.0,
       "articles": [
         {
           "article_id": "a84b60a3-2ce7-202d-1370-c9152fe15ca4",
@@ -145,11 +145,11 @@
           "expected_interests": [
             "SpaceX"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "SpaceX",
+          "found_rank": 2,
+          "ok": true,
+          "rank_points": 1.0
         },
         {
           "article_id": "b8592e5f-2796-1057-c594-7e471cf154c9",
@@ -157,11 +157,11 @@
           "expected_interests": [
             "SpaceX"
           ],
-          "found": false,
-          "found_interest": null,
-          "found_rank": null,
-          "ok": false,
-          "rank_points": 0.0
+          "found": true,
+          "found_interest": "SpaceX",
+          "found_rank": 1,
+          "ok": true,
+          "rank_points": 1.0
         }
       ]
     }
@@ -173,9 +173,9 @@
       "expected_interests": [
         "IA et les LLMs"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
+      "found": true,
+      "found_interest": "Apple",
+      "found_rank": 21,
       "ok": false,
       "rank_points": 0.0
     },
@@ -185,11 +185,11 @@
       "expected_interests": [
         "SpaceX"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "SpaceX",
+      "found_rank": 2,
+      "ok": true,
+      "rank_points": 1.0
     },
     {
       "article_id": "4e4ebd55-08fb-340d-785d-b0213664f77f",
@@ -197,9 +197,9 @@
       "expected_interests": [
         "Guerres et conflits internationaux"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
+      "found": true,
+      "found_interest": "IA et les LLMs",
+      "found_rank": 2,
       "ok": false,
       "rank_points": 0.0
     },
@@ -209,11 +209,11 @@
       "expected_interests": [
         "Apple"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "Apple",
+      "found_rank": 1,
+      "ok": true,
+      "rank_points": 1.0
     },
     {
       "article_id": "d97085a6-12bc-f668-a473-173f63b488c2",
@@ -221,9 +221,9 @@
       "expected_interests": [
         "Politique Française"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
+      "found": true,
+      "found_interest": "Guerres et conflits internationaux",
+      "found_rank": 2,
       "ok": false,
       "rank_points": 0.0
     },
@@ -233,11 +233,11 @@
       "expected_interests": [
         "Guerres et conflits internationaux"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "Guerres et conflits internationaux",
+      "found_rank": 1,
+      "ok": true,
+      "rank_points": 1.0
     },
     {
       "article_id": "180767ef-ebac-bb3e-dd71-0a0458f4f1e3",
@@ -245,11 +245,11 @@
       "expected_interests": [
         "IA et les LLMs"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "IA et les LLMs",
+      "found_rank": 1,
+      "ok": true,
+      "rank_points": 1.0
     },
     {
       "article_id": "18b72c49-340a-c03e-a13f-f5c1ef182b12",
@@ -257,11 +257,11 @@
       "expected_interests": [
         "Politique Française"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "Politique Française",
+      "found_rank": 1,
+      "ok": true,
+      "rank_points": 1.0
     },
     {
       "article_id": "b8592e5f-2796-1057-c594-7e471cf154c9",
@@ -269,11 +269,11 @@
       "expected_interests": [
         "SpaceX"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "SpaceX",
+      "found_rank": 1,
+      "ok": true,
+      "rank_points": 1.0
     },
     {
       "article_id": "d9095dac-36c2-d3e3-36c2-a5c5985ada2d",
@@ -281,11 +281,11 @@
       "expected_interests": [
         "Apple"
       ],
-      "found": false,
-      "found_interest": null,
-      "found_rank": null,
-      "ok": false,
-      "rank_points": 0.0
+      "found": true,
+      "found_interest": "Apple",
+      "found_rank": 2,
+      "ok": true,
+      "rank_points": 1.0
     }
   ]
 }

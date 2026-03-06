@@ -170,6 +170,38 @@ class PostgresStore:
             conn.commit()
         return len(data)
 
+    def fetch_articles(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT id, title, content, published_date, source, url, fingerprint, lang, raw
+        FROM articles
+        ORDER BY published_date DESC NULLS LAST, id ASC
+        """
+        params: tuple[Any, ...] = ()
+        if limit is not None:
+            sql += " LIMIT %s"
+            params = (int(limit),)
+
+        out: List[Dict[str, Any]] = []
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                for rec_id, title, content, published_date, source, url, fingerprint, lang, raw in cur.fetchall():
+                    row: Dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
+                    row.update(
+                        {
+                            "id": rec_id,
+                            "title": title,
+                            "content": content,
+                            "published_date": published_date.isoformat() if published_date is not None else None,
+                            "source": source,
+                            "url": url,
+                            "fingerprint": fingerprint,
+                            "lang": lang,
+                        }
+                    )
+                    out.append(row)
+        return out
+
     def create_retrieval_run(self, payload: Dict[str, Any]) -> int:
         sql = """
         INSERT INTO retrieval_runs (

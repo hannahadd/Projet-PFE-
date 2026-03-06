@@ -146,14 +146,7 @@ def _build_export_blocks(
 
 
 def main() -> int:
-    candidate_data_paths = [
-        ROOT / "merged_dataset.json",
-        Path(__file__).resolve().parent / "ingestiontable" / "merged_dataset.normalized.json",
-        ROOT / "old" / "src" / "merged_dataset.json",
-    ]
-    default_data_path = str(next((p for p in candidate_data_paths if p.exists()), candidate_data_paths[0]))
     parser = argparse.ArgumentParser(description="News retrieval with PostgreSQL output")
-    parser.add_argument("data_path", nargs="?", default=default_data_path)
     parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))
     parser.add_argument("--qdrant-url", default="http://localhost:6333")
     parser.add_argument("--collection", default="news_dense")
@@ -176,9 +169,13 @@ def main() -> int:
 
     tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()] if args.tags else []
 
-    raw = core.load_articles(args.data_path, limit=args.max_articles)
-    articles = core.dedup_articles(raw)
-    print(f"Loaded: {len(raw)} | After dedup: {len(articles)}")
+    db_rows = store.fetch_articles(limit=args.max_articles)
+    if not db_rows:
+        raise RuntimeError("No articles found in PostgreSQL table 'articles'. Run normalization/upsert first.")
+
+    raw_articles = [core.Article.from_dict(r) for r in db_rows]
+    articles = core.dedup_articles(raw_articles)
+    print(f"Loaded from PostgreSQL: {len(raw_articles)} | After dedup: {len(articles)}")
 
     qindex = core.DenseIndexQdrant(url=args.qdrant_url, collection=args.collection)
     points_count = qindex.get_points_count() if qindex.collection_exists() else 0
@@ -243,7 +240,7 @@ def main() -> int:
 
     run_id = store.create_retrieval_run(
         {
-            "data_path": args.data_path,
+            "data_path": "postgresql://articles",
             "qdrant_url": args.qdrant_url,
             "collection": args.collection,
             "dense_model": "BAAI/bge-m3",
