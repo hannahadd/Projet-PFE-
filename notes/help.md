@@ -162,6 +162,10 @@ python main/reranker.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --retrieval-run-id XXX --topn 10 --hydrate
 
+python main/reranker.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --topn 10 --hydrate --retrieval-run-id X
+
 # 8) Writing -> PostgreSQL par batch de 10 intérêts (remplacer YYY par rerank_run_id)
 python main/writing.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
@@ -169,12 +173,19 @@ python main/writing.py \
   --model qwen3.5:9b-instruct-q4_K_M \
   --interest-batch-size 10 --offset 0 --top_n 10
 
+python main/writing.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --model qwen3.5:9b-q4_K_M \
+  --interest-batch-size 10 --offset 0 --top_n 10 \
+  --rerank-run-id 2
+
+
 # 9) Batch suivant (10 intérêts suivants)
 python main/writing.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --rerank-run-id YYY \
   --model qwen3.5:9b-q4_K_M \
-  --interest-batch-size 10 --offset 0 --top_n 10
+  --interest-batch-size 10 --offset 10 --top_n 10
 
 
 

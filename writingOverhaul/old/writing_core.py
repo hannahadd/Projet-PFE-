@@ -41,31 +41,14 @@ THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 TITLE_PREFIX_RE = re.compile(r"^(?:title|headline|titre)\s*:\s*", re.IGNORECASE)
 SUMMARY_PREFIX_RE = re.compile(r"^(?:summary|résumé|resume)\s*:\s*", re.IGNORECASE)
-LIST_MARKER_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s+")
 SINGLE_LINE_LABELED_RE = re.compile(
     r"^\s*(?:title|headline|titre)\s*:\s*(?P<title>.+?)\s+"
     r"(?:summary|résumé|resume)\s*:\s*(?P<summary>.+?)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
 
-BAD_OUTPUT_PATTERNS = [
-    "constraint checklist",
-    "confidence score",
-    "drafting the title",
-    "drafting the summary",
-    "input data:",
-    "output plain text only",
-    "first line only",
-    "second line onward",
-    "no json",
-    "no bullet points",
-    "do not reveal reasoning",
-    "i should use a clean english news title",
-    "key points from text",
-]
 
-
-def strip_think_and_fences(text: str) -> str: 
+def strip_think_and_fences(text: str) -> str:
     text = THINK_RE.sub("", text or "")
     text = FENCE_RE.sub("", text).strip()
     return text
@@ -98,61 +81,14 @@ def safe_json_loads(text: str) -> Optional[Dict[str, Any]]:
 
 
 def clean_generated_title(title: Optional[str]) -> str:
-    text = strip_think_and_fences(title or "").replace("\r\n", "\n").strip()
+    text = (title or "").strip()
     if not text:
         return ""
-    if "\n" in text:
-        text = next((line.strip() for line in text.splitlines() if line.strip()), "")
     text = TITLE_PREFIX_RE.sub("", text)
     text = re.sub(r"^[#>*\-\s]+", "", text).strip()
     text = text.strip("\"'“”‘’ ")
     text = re.sub(r"\s+", " ", text)
     return text.strip(" :-–—")
-
-
-def clean_generated_summary(summary: Optional[str]) -> str:
-    text = (summary or "").replace("\r\n", "\n").strip()
-    if not text:
-        return ""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if not lines:
-        return ""
-    if len(lines) == 1:
-        return SUMMARY_PREFIX_RE.sub("", lines[0]).strip()
-
-    cleaned_lines: List[str] = []
-    for idx, line in enumerate(lines):
-        if idx == 0:
-            line = SUMMARY_PREFIX_RE.sub("", line).strip()
-        cleaned_lines.append(line)
-    return " ".join(cleaned_lines).strip()
-
-
-def normalized_text_key(text: Optional[str]) -> str:
-    value = unicodedata.normalize("NFKD", (text or "").strip().lower())
-    value = "".join(ch for ch in value if not unicodedata.combining(ch))
-    value = re.sub(r"[^a-z0-9]+", " ", value)
-    return re.sub(r"\s+", " ", value).strip()
-
-
-def title_is_translated_or_rewritten(
-    generated_title: Optional[str],
-    original_title: Optional[str],
-    original_lang: Optional[str],
-) -> bool:
-    generated = clean_generated_title(generated_title)
-    if not generated:
-        return False
-
-    original = clean_generated_title(original_title)
-    lang = (original_lang or "").strip().lower()
-    if not original:
-        return True
-
-    if normalized_text_key(generated) != normalized_text_key(original):
-        return True
-
-    return lang.startswith("en")
 
 
 def _looks_like_summary(text: str) -> bool:
@@ -165,16 +101,17 @@ def _looks_like_summary(text: str) -> bool:
 
 def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> Dict[str, Any]:
     cleaned = strip_think_and_fences(raw).replace("\r\n", "\n").strip()
+    fallback = clean_generated_title(fallback_title)
 
     if not cleaned:
-        out: Dict[str, Any] = {"title": "", "summary_fr": "", "points_cles": []}
+        out: Dict[str, Any] = {"title": fallback, "summary_fr": "", "points_cles": []}
         out["notes"] = "Empty model response"
         return out
 
     labeled = SINGLE_LINE_LABELED_RE.match(cleaned)
     if labeled:
-        title = clean_generated_title(labeled.group("title"))
-        summary = clean_generated_summary(labeled.group("summary"))
+        title = clean_generated_title(labeled.group("title")) or fallback
+        summary = labeled.group("summary").strip()
         out = {"title": title, "summary_fr": summary, "points_cles": []}
         if not title or not summary:
             out["notes"] = "Partial model response"
@@ -183,7 +120,7 @@ def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> 
     lines = [line.rstrip() for line in cleaned.splitlines()]
     first_idx = next((idx for idx, line in enumerate(lines) if line.strip()), None)
     if first_idx is None:
-        out = {"title": "", "summary_fr": "", "points_cles": []}
+        out = {"title": fallback, "summary_fr": "", "points_cles": []}
         out["notes"] = "Empty model response"
         return out
 
@@ -191,11 +128,14 @@ def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> 
     summary_lines = [line.strip() for line in lines[first_idx + 1 :] if line.strip()]
     if summary_lines:
         summary_lines[0] = SUMMARY_PREFIX_RE.sub("", summary_lines[0]).strip()
-    summary = clean_generated_summary("\n".join(line for line in summary_lines if line))
+    summary = "\n".join(line for line in summary_lines if line).strip()
 
     if not summary and _looks_like_summary(title):
         summary = cleaned
-        title = ""
+        title = fallback
+
+    if not title:
+        title = fallback
 
     out = {"title": title, "summary_fr": summary, "points_cles": []}
     missing = []
@@ -205,72 +145,6 @@ def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> 
         missing.append("summary")
     if missing:
         out["notes"] = f"Missing parsed fields: {', '.join(missing)}"
-    return out
-
-
-def looks_like_contaminated_output(raw: str, parsed: Optional[Dict[str, Any]] = None) -> bool:
-    cleaned = strip_think_and_fences(raw).strip()
-    lowered = cleaned.lower()
-    if any(marker in lowered for marker in BAD_OUTPUT_PATTERNS):
-        return True
-
-    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
-    bullet_lines = sum(1 for line in lines if LIST_MARKER_RE.match(line))
-    if bullet_lines >= 3:
-        return True
-
-    if parsed:
-        title = str(parsed.get("title") or "").strip().lower()
-        summary = str(parsed.get("summary_fr") or "").strip().lower()
-        if any(marker in title for marker in BAD_OUTPUT_PATTERNS):
-            return True
-        if any(marker in summary for marker in BAD_OUTPUT_PATTERNS):
-            return True
-        if summary and bullet_lines >= 1 and ("*" in summary or "- " in summary or "1." in summary):
-            return True
-
-    return False
-
-
-def is_usable_summary_output(summary: Optional[str], raw: str) -> bool:
-    cleaned_summary = clean_generated_summary(summary)
-    if not cleaned_summary:
-        return False
-    if len(cleaned_summary) < 350:
-        return False
-    if looks_like_contaminated_output(raw, {"summary_fr": cleaned_summary}):
-        return False
-    return True
-
-
-def is_usable_title_output(title: Optional[str], raw: str, original_title: Optional[str], original_lang: Optional[str]) -> bool:
-    cleaned_title = clean_generated_title(title)
-    if not cleaned_title:
-        return False
-    if len(cleaned_title) < 8:
-        return False
-    if len(cleaned_title) > 160:
-        return False
-    if looks_like_contaminated_output(raw, {"title": cleaned_title}):
-        return False
-    if not title_is_translated_or_rewritten(cleaned_title, original_title, original_lang):
-        return False
-    return True
-
-
-def parse_summary_output(raw: str) -> Dict[str, Any]:
-    cleaned = clean_generated_summary(strip_think_and_fences(raw))
-    out: Dict[str, Any] = {"summary_fr": cleaned, "points_cles": []}
-    if not cleaned:
-        out["notes"] = "Empty summary response"
-    return out
-
-
-def parse_title_output(raw: str) -> Dict[str, Any]:
-    cleaned = clean_generated_title(raw)
-    out: Dict[str, Any] = {"title": cleaned}
-    if not cleaned:
-        out["notes"] = "Empty title response"
     return out
 
 
@@ -433,149 +307,46 @@ class OllamaClient:
 # Prompting (article-by-article)
 # -------------------------
 
-SUMMARY_SYSTEM_PROMPT = """Return only one very detailed English summary paragraph.
-Write 8 to 12 rich sentences.
-Cover the main facts, actors, chronology, numbers, context, causes, stakes, and consequences when they are present in the article.
-Be factual and specific.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
-Do not mention instructions.
-Do not invent facts.
-"""
+SYSTEM_PROMPT = """You summarize news articles.
 
-SUMMARY_RETRY_SYSTEM_PROMPT = """Your previous answer was invalid because it copied instructions, analysis, or list formatting.
-Retry now.
-Return only one very detailed English summary paragraph.
-Write 8 to 12 rich sentences.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
-"""
-
-TITLE_SYSTEM_PROMPT = """Return only a short English news title for the article.
-The title must be concise, natural, and informative.
-Use one line only.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
-Do not mention instructions.
-If the source headline is not English, rewrite it in natural English instead of copying it.
-"""
-
-TITLE_RETRY_SYSTEM_PROMPT = """Your previous answer was invalid.
-Retry now.
-Return only one short English news title.
-One line only.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
-Do not copy a non-English source headline verbatim.
+Rules:
+- Do not reveal reasoning.
+- Do not emit <think> tags.
+- Output plain text only.
+- First line only: an English news title.
+- Starting from the second line: an English summary in one compact paragraph of 3 to 6 sentences.
+- No JSON.
+- No bullet points.
+- No labels such as Title: or Summary:.
+- Stay factual and do not invent details.
 """
 
 
-def _article_prompt_body(interest: str, meta: Dict[str, Any], content: str) -> str:
-    return "\n".join(
+def build_article_messages(interest: str, meta: Dict[str, Any], content: str) -> List[Dict[str, str]]:
+    user_payload = "\n".join(
         [
+            "Task:",
+            "- Write the title in English on the first line only.",
+            "- From the second line onward, write the summary in English.",
+            "- Keep the summary factual, compact, and readable.",
+            "- Do not output JSON, markdown, bullets, or labels.",
+            "",
             f"Interest: {interest}",
+            f"Article ID: {meta.get('article_id') or ''}",
             f"Original title: {meta.get('title') or ''}",
             f"Source: {meta.get('source') or ''}",
             f"Published date: {meta.get('published_date') or ''}",
             f"Original language: {meta.get('lang') or ''}",
+            f"URL: {meta.get('url') or ''}",
             "",
-            "Use only the article text below.",
-            "<article>",
+            "Article content:",
             content,
-            "</article>",
-        ]
-    )
-
-
-def _title_prompt_body(interest: str, meta: Dict[str, Any], content: str, summary: str) -> str:
-    parts = [
-        f"Interest: {interest}",
-        f"Original title: {meta.get('title') or ''}",
-        f"Original language: {meta.get('lang') or ''}",
-        f"Source: {meta.get('source') or ''}",
-    ]
-    if summary.strip():
-        parts.extend([
-            "",
-            "Generated summary:",
-            summary,
-        ])
-    parts.extend([
-        "",
-        "Article text:",
-        "<article>",
-        content,
-        "</article>",
-    ])
-    return "\n".join(parts)
-
-
-def build_summary_messages(interest: str, meta: Dict[str, Any], content: str) -> List[Dict[str, str]]:
-    user_payload = _article_prompt_body(interest, meta, content)
-    return [
-        {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-        {"role": "user", "content": user_payload},
-    ]
-
-
-def build_summary_retry_messages(interest: str, meta: Dict[str, Any], content: str, previous_raw: str) -> List[Dict[str, str]]:
-    user_payload = "\n\n".join(
-        [
-            _article_prompt_body(interest, meta, content),
-            "Invalid previous answer to ignore:",
-            previous_raw[:2000],
         ]
     )
     return [
-        {"role": "system", "content": SUMMARY_RETRY_SYSTEM_PROMPT},
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_payload},
     ]
-
-
-def build_title_messages(interest: str, meta: Dict[str, Any], content: str, summary: str) -> List[Dict[str, str]]:
-    user_payload = _title_prompt_body(interest, meta, content, summary)
-    return [
-        {"role": "system", "content": TITLE_SYSTEM_PROMPT},
-        {"role": "user", "content": user_payload},
-    ]
-
-
-def build_title_retry_messages(interest: str, meta: Dict[str, Any], content: str, summary: str, previous_raw: str) -> List[Dict[str, str]]:
-    user_payload = "\n\n".join(
-        [
-            _title_prompt_body(interest, meta, content, summary),
-            "Invalid previous answer to ignore:",
-            previous_raw[:1000],
-        ]
-    )
-    return [
-        {"role": "system", "content": TITLE_RETRY_SYSTEM_PROMPT},
-        {"role": "user", "content": user_payload},
-    ]
-
-
-def build_article_messages(interest: str, meta: Dict[str, Any], content: str) -> List[Dict[str, str]]:
-    return build_summary_messages(interest, meta, content)
-
-
-def build_article_retry_messages(interest: str, meta: Dict[str, Any], content: str, previous_raw: str) -> List[Dict[str, str]]:
-    return build_summary_retry_messages(interest, meta, content, previous_raw)
 
 
 def normalize_llm_article_output(parsed: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -729,7 +500,7 @@ def main() -> int:
             if not content:
                 article_out = {
                     **meta,
-                    "title": "",
+                    "title": clean_generated_title(meta.get("title")),
                     "summary_fr": "",
                     "points_cles": [],
                     "notes": "Article content missing in the source payload.",
@@ -750,11 +521,11 @@ def main() -> int:
                 print(raw)
                 print("=" * 80 + "\n")
 
-            llm_out = parse_llm_article_output(raw)
+            llm_out = parse_llm_article_output(raw, fallback_title=meta.get("title"))
 
             article_out = {**meta, **llm_out}
             if not isinstance(article_out.get("title"), str):
-                article_out["title"] = ""
+                article_out["title"] = clean_generated_title(meta.get("title"))
             # safety: ensure types
             if not isinstance(article_out.get("summary_fr"), str):
                 article_out["summary_fr"] = ""

@@ -115,18 +115,7 @@ CREATE TABLE IF NOT EXISTS article_summaries (
     PRIMARY KEY (writing_run_id, interest, rank)
 );
 
-CREATE SEQUENCE IF NOT EXISTS article_summaries_id_seq;
-ALTER TABLE article_summaries ADD COLUMN IF NOT EXISTS id BIGINT;
-ALTER TABLE article_summaries ALTER COLUMN id SET DEFAULT nextval('article_summaries_id_seq');
-UPDATE article_summaries SET id = nextval('article_summaries_id_seq') WHERE id IS NULL;
-SELECT setval(
-    'article_summaries_id_seq',
-    COALESCE((SELECT MAX(id) FROM article_summaries), 0) + 1,
-    false
-);
-
 CREATE INDEX IF NOT EXISTS idx_article_summaries_run_interest ON article_summaries (writing_run_id, interest);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_article_summaries_id ON article_summaries (id);
 """
 
 
@@ -425,7 +414,7 @@ class PostgresStore:
             conn.commit()
         return run_id
 
-    def upsert_article_summary(self, writing_run_id: int, row: Dict[str, Any]) -> int:
+    def upsert_article_summary(self, writing_run_id: int, row: Dict[str, Any]) -> None:
         sql = """
         INSERT INTO article_summaries (
             writing_run_id, interest, rank, article_id, title, url, source, published_date, lang,
@@ -443,8 +432,7 @@ class PostgresStore:
           summary_fr = EXCLUDED.summary_fr,
           points_cles = EXCLUDED.points_cles,
           notes = EXCLUDED.notes,
-                    raw_llm = EXCLUDED.raw_llm
-                RETURNING id;
+          raw_llm = EXCLUDED.raw_llm;
         """
         vals = (
             int(writing_run_id),
@@ -462,90 +450,6 @@ class PostgresStore:
             json.dumps(row.get("points_cles") or [], ensure_ascii=False),
             row.get("notes"),
             json.dumps(row.get("raw_llm") or {}, ensure_ascii=False),
-        )
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, vals)
-                article_summary_id = int(cur.fetchone()[0])
-            conn.commit()
-        return article_summary_id
-
-    def fetch_article_summary_repair_context(self, article_summary_id: int) -> Optional[Dict[str, Any]]:
-        sql = """
-        SELECT
-            s.id,
-            s.writing_run_id,
-            wr.rerank_run_id,
-            s.interest,
-            s.rank,
-            s.article_id,
-            s.title,
-            s.url,
-            s.source,
-            s.published_date,
-            s.lang,
-            s.rerank_score,
-            s.dense_score,
-            s.summary_fr,
-            s.points_cles,
-            s.notes,
-            s.raw_llm,
-            h.payload,
-            h.full_article
-        FROM article_summaries s
-        JOIN writing_runs wr ON wr.id = s.writing_run_id
-        LEFT JOIN rerank_hits h
-          ON h.rerank_run_id = wr.rerank_run_id
-         AND h.interest = s.interest
-         AND h.rank = s.rank
-        WHERE s.id = %s;
-        """
-        with self.connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (int(article_summary_id),))
-                row = cur.fetchone()
-        if not row:
-            return None
-        return {
-            "id": row[0],
-            "writing_run_id": row[1],
-            "rerank_run_id": row[2],
-            "interest": row[3],
-            "rank": row[4],
-            "article_id": row[5],
-            "title": row[6],
-            "url": row[7],
-            "source": row[8],
-            "published_date": row[9],
-            "lang": row[10],
-            "rerank_score": row[11],
-            "dense_score": row[12],
-            "summary_fr": row[13],
-            "points_cles": row[14] if isinstance(row[14], list) else [],
-            "notes": row[15],
-            "raw_llm": row[16] if isinstance(row[16], dict) else {},
-            "payload": row[17] if isinstance(row[17], dict) else {},
-            "full_article": row[18] if isinstance(row[18], dict) else {},
-        }
-
-    def update_article_summary_by_id(self, article_summary_id: int, row: Dict[str, Any]) -> None:
-        sql = """
-        UPDATE article_summaries
-        SET
-            title = %s,
-            summary_fr = %s,
-            points_cles = %s::jsonb,
-            notes = %s,
-            raw_llm = %s::jsonb
-        WHERE id = %s;
-        """
-        vals = (
-            row.get("title") or "",
-            row.get("summary_fr") or "",
-            json.dumps(row.get("points_cles") or [], ensure_ascii=False),
-            row.get("notes"),
-            json.dumps(row.get("raw_llm") or {}, ensure_ascii=False),
-            int(article_summary_id),
         )
         with self.connect() as conn:
             with conn.cursor() as cur:
