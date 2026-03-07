@@ -258,3 +258,8 @@ e01555ed3c10   qdrant/qdrant   "./entrypoint.sh"        14 hours ago   Up 14 sec
 9b89bbbd5dd8   postgres:16     "docker-entrypoint.s…"   14 hours ago   Up 5 seconds    0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp   pfe-postgres
 yohan@neon:~/Desktop/note$ 
 
+# Python (Website)
+
+Pour lancer le site web  : source .venv/bin/activate (car dépendances python qui n'était pas possible de prendre sans l'env virtuel)
+
+(.venv) pfe@neon:~$ python3 Documents/PFE/main/front/app.py #lance le site web, ensuite si on est sur un pc distant, il faut taper directement l'IP de la machine dans le navigateur : http://100.86.221.84:8080/ ou bien http://localhost:8000 pour yohan (j'ai pas testé mais ça devrait marcher)

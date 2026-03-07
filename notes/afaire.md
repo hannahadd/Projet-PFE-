@@ -9,6 +9,11 @@ site web qui tire les summary de postgres
 probleme des doublons
 
 
+pour le retrieval j'ai pas encore compris exactement ce que ça fait, est ce que ça fait une recherche dense memes pour les expensions ?
+ça serait peut etre mieux de faire dense pour interet core + note bonus BM25 si expansion ça correspond. ça serait plus leger. aussi je pense qu'on va prendre
+"trending" prompt
+
+
 
 
 
@@ -372,3 +377,26 @@ for each item, apply this test:
    If yes to 2, 3, or 4, replace it.
 
 Reply only with the 20 final items.
+
+
+
+
+----------------------------------
+
+give me 20 trending words directly linked with "AI and LLMs", one or two word, no explanation
+
+give me 20 trending words directly linked with "SpaceX", one or two word, no explanation, no countries
+
+give me 20 trending words directly linked with "War and international conflict", one or two word, no explanation, no countries
+
+give me 20 trending words directly linked with "Apple", one or two word, no explanation
+
+give me 20 trending words directly linked with "french politics", one or two word, no explanation, no countries
+
+
+docker inspect pfe-postgres | grep -iE "POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB"
+
+yohan@neon:~/Desktop/note$ docker inspect pfe-postgres | grep -iE "POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_DB"
+                "POSTGRES_PASSWORD=postgres",
+                "POSTGRES_DB=pfe_news",
+yohan@neon:~/Desktop/note$ 
