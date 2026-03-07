@@ -234,6 +234,12 @@ python main/writing.py \
 
 
 
+# #lance le site web, ensuite si on est sur un pc distant, il faut taper directement l'IP de la http://100.86.221.84:8080/ ou bien http://localhost:8000
+python3 /home/pfe/Documents/PFE/main/fastcheckrerank/app.py 
+
+/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/fastcheckrerank/save.py
+
+http://127.0.0.1:8088/show-data
 
 
 ---------------------------------------------------------

@@ -72,4 +72,4 @@ def show_stories():
     return render_template_string(HTML_TEMPLATE, all_interests=all_interests, stories=stories)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8088)

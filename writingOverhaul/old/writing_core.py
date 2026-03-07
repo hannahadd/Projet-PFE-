@@ -2,18 +2,24 @@
 # -*- coding: utf-8 -*-
 
 """
-Core helpers for the DB-backed writing stage.
+rewrite.py
+----------
+Résumé (FR) des 10 articles finaux par intérêt, à partir du JSON qwenrerankbge,
+en utilisant Ollama (Qwen 3.5 9B Instruct recommandé en q4/q8).
 
-The active pipeline reads reranked articles from PostgreSQL, calls Ollama one
-article at a time, parses a plain-text response, then stores the generated
-English title and English summary back into PostgreSQL.
+IMPORTANT : traite TOUJOURS article par article et écrit au fur et à mesure.
 
-Expected LLM output:
-    - line 1: English title
-    - line 2+: English summary
+Sortie :
+  interest/<slug_interet>.json  (1 fichier par intérêt, mis à jour après chaque article)
+  interest/index.json           (manifest global)
 
-The historical column name `summary_fr` is kept for compatibility, even though
-the generated summary is now in English.
+Exemples :
+  python rewrite.py --input qwenrerankbge.json --model "qwen3.5:9b-q4_K_M"
+  python rewrite.py --input qwenrerankbge.json --model "qwen3.5:9b-q8_0" --num_ctx 8192
+  python rewrite.py --input qwenrerankbge.json --model "qwen3.5:9b-q4_K_M" --debug
+
+Prérequis :
+  pip install requests
 """
 
 from __future__ import annotations
@@ -39,16 +45,9 @@ import requests
 
 THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
-TITLE_PREFIX_RE = re.compile(r"^(?:title|headline|titre)\s*:\s*", re.IGNORECASE)
-SUMMARY_PREFIX_RE = re.compile(r"^(?:summary|résumé|resume)\s*:\s*", re.IGNORECASE)
-SINGLE_LINE_LABELED_RE = re.compile(
-    r"^\s*(?:title|headline|titre)\s*:\s*(?P<title>.+?)\s+"
-    r"(?:summary|résumé|resume)\s*:\s*(?P<summary>.+?)\s*$",
-    re.IGNORECASE | re.DOTALL,
-)
 
 
-def strip_think_and_fences(text: str) -> str:
+def strip_think_and_fences(text: str) -> str: 
     text = THINK_RE.sub("", text or "")
     text = FENCE_RE.sub("", text).strip()
     return text
@@ -78,74 +77,6 @@ def safe_json_loads(text: str) -> Optional[Dict[str, Any]]:
         return json.loads(raw)
     except Exception:
         return None
-
-
-def clean_generated_title(title: Optional[str]) -> str:
-    text = (title or "").strip()
-    if not text:
-        return ""
-    text = TITLE_PREFIX_RE.sub("", text)
-    text = re.sub(r"^[#>*\-\s]+", "", text).strip()
-    text = text.strip("\"'“”‘’ ")
-    text = re.sub(r"\s+", " ", text)
-    return text.strip(" :-–—")
-
-
-def _looks_like_summary(text: str) -> bool:
-    compact = re.sub(r"\s+", " ", (text or "").strip())
-    if len(compact) >= 140:
-        return True
-    sentence_marks = compact.count(". ") + compact.count("! ") + compact.count("? ")
-    return sentence_marks >= 2
-
-
-def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> Dict[str, Any]:
-    cleaned = strip_think_and_fences(raw).replace("\r\n", "\n").strip()
-    fallback = clean_generated_title(fallback_title)
-
-    if not cleaned:
-        out: Dict[str, Any] = {"title": fallback, "summary_fr": "", "points_cles": []}
-        out["notes"] = "Empty model response"
-        return out
-
-    labeled = SINGLE_LINE_LABELED_RE.match(cleaned)
-    if labeled:
-        title = clean_generated_title(labeled.group("title")) or fallback
-        summary = labeled.group("summary").strip()
-        out = {"title": title, "summary_fr": summary, "points_cles": []}
-        if not title or not summary:
-            out["notes"] = "Partial model response"
-        return out
-
-    lines = [line.rstrip() for line in cleaned.splitlines()]
-    first_idx = next((idx for idx, line in enumerate(lines) if line.strip()), None)
-    if first_idx is None:
-        out = {"title": fallback, "summary_fr": "", "points_cles": []}
-        out["notes"] = "Empty model response"
-        return out
-
-    title = clean_generated_title(lines[first_idx])
-    summary_lines = [line.strip() for line in lines[first_idx + 1 :] if line.strip()]
-    if summary_lines:
-        summary_lines[0] = SUMMARY_PREFIX_RE.sub("", summary_lines[0]).strip()
-    summary = "\n".join(line for line in summary_lines if line).strip()
-
-    if not summary and _looks_like_summary(title):
-        summary = cleaned
-        title = fallback
-
-    if not title:
-        title = fallback
-
-    out = {"title": title, "summary_fr": summary, "points_cles": []}
-    missing = []
-    if not out["title"]:
-        missing.append("title")
-    if not out["summary_fr"]:
-        missing.append("summary")
-    if missing:
-        out["notes"] = f"Missing parsed fields: {', '.join(missing)}"
-    return out
 
 
 # -------------------------
@@ -307,45 +238,49 @@ class OllamaClient:
 # Prompting (article-by-article)
 # -------------------------
 
-SYSTEM_PROMPT = """You summarize news articles.
+SYSTEM_PROMPT = """Tu es un assistant de synthèse d'articles de presse.
+Ta mission : produire des résumés en français, factuels, compacts et lisibles.
 
-Rules:
-- Do not reveal reasoning.
-- Do not emit <think> tags.
-- Output plain text only.
-- First line only: an English news title.
-- Starting from the second line: an English summary in one compact paragraph of 3 to 6 sentences.
-- No JSON.
-- No bullet points.
-- No labels such as Title: or Summary:.
-- Stay factual and do not invent details.
+RÈGLES IMPORTANTES (mode non-thinking) :
+- N'affiche PAS ton raisonnement.
+- N'écris pas de balises <think> (ni rien de similaire).
+- Réponds UNIQUEMENT avec du JSON valide (sans texte autour, sans markdown).
+
+FORMAT DE SORTIE (objet JSON) :
+{
+  "summary_fr": "3 à 6 phrases max, 1 paragraphe.",
+  "points_cles": ["3 à 6 points courts"],
+  "notes": "optionnel"
+}
+
+Si le contenu est absent / illisible :
+- mets summary_fr="" et explique pourquoi dans notes.
 """
 
 
 def build_article_messages(interest: str, meta: Dict[str, Any], content: str) -> List[Dict[str, str]]:
-    user_payload = "\n".join(
-        [
-            "Task:",
-            "- Write the title in English on the first line only.",
-            "- From the second line onward, write the summary in English.",
-            "- Keep the summary factual, compact, and readable.",
-            "- Do not output JSON, markdown, bullets, or labels.",
-            "",
-            f"Interest: {interest}",
-            f"Article ID: {meta.get('article_id') or ''}",
-            f"Original title: {meta.get('title') or ''}",
-            f"Source: {meta.get('source') or ''}",
-            f"Published date: {meta.get('published_date') or ''}",
-            f"Original language: {meta.get('lang') or ''}",
-            f"URL: {meta.get('url') or ''}",
-            "",
-            "Article content:",
-            content,
-        ]
-    )
+    user_payload = {
+        "interest": interest,
+        "article": {
+            "article_id": meta.get("article_id"),
+            "title": meta.get("title"),
+            "url": meta.get("url"),
+            "published_date": meta.get("published_date"),
+            "source": meta.get("source"),
+            "lang": meta.get("lang"),
+            "content": content,
+        },
+        "constraints": {
+            "language": "fr",
+            "json_only": True,
+            "no_reasoning": True,
+            "summary_sentences": "3-6",
+            "points_cles": "3-6",
+        },
+    }
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_payload},
+        {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
     ]
 
 
@@ -388,7 +323,7 @@ def normalize_llm_article_output(parsed: Optional[Dict[str, Any]]) -> Dict[str, 
 # -------------------------
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Legacy article-by-article export mode via Ollama.")
+    ap = argparse.ArgumentParser(description="Résumé FR article-par-article via Ollama (écrit progressivement).")
     ap.add_argument("--input", required=True, help="Chemin du JSON qwenrerankbge (ex: qwenrerankbge.json)")
     ap.add_argument("--outdir", default="interest", help="Dossier de sortie (default: ./interest)")
     ap.add_argument("--model", default="qwen3.5:9b-q4_K_M")
@@ -401,7 +336,7 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--sleep", type=float, default=0.05)
     ap.add_argument("--overwrite", action="store_true", help="Réécrire les fichiers d'intérêt (sinon resume/reprise)")
-    ap.add_argument("--no_enforce_json", action="store_true", help="Legacy option kept for compatibility")
+    ap.add_argument("--no_enforce_json", action="store_true", help="N'utilise pas format=json côté Ollama")
     ap.add_argument("--debug", action="store_true", help="Affiche la sortie brute du LLM dans la console")
     args = ap.parse_args()
 
@@ -500,10 +435,9 @@ def main() -> int:
             if not content:
                 article_out = {
                     **meta,
-                    "title": clean_generated_title(meta.get("title")),
                     "summary_fr": "",
                     "points_cles": [],
-                    "notes": "Article content missing in the source payload.",
+                    "notes": "Contenu article absent dans l'entrée (full_article/content/canonical_text/description vide).",
                 }
                 state["articles"].append(article_out)
                 processed.add(key)
@@ -521,11 +455,10 @@ def main() -> int:
                 print(raw)
                 print("=" * 80 + "\n")
 
-            llm_out = parse_llm_article_output(raw, fallback_title=meta.get("title"))
+            parsed = safe_json_loads(raw)
+            llm_out = normalize_llm_article_output(parsed)
 
             article_out = {**meta, **llm_out}
-            if not isinstance(article_out.get("title"), str):
-                article_out["title"] = clean_generated_title(meta.get("title"))
             # safety: ensure types
             if not isinstance(article_out.get("summary_fr"), str):
                 article_out["summary_fr"] = ""

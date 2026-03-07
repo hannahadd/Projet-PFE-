@@ -25,11 +25,11 @@ HTML_TEMPLATE = """
     {% if data %}
         <table border="1">
             <tr>
-                <th>Titre</th><th>Date de publication</th><th>Summary FR</th>
+                <th>Interest</th><th>Titre</th><th>Summary FR</th><th>Notes</th>
             </tr>
             {% for row in data %}
             <tr>
-                <td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td>
+                <td>{{ row[0] }}</td><td>{{ row[1] }}</td><td>{{ row[2] }}</td><td>{{ row[3] }}</td>
             </tr>
             {% endfor %}
         </table>
@@ -46,12 +46,18 @@ def index():
 def show_data():
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
-    # On récupère juste le titre, la source et le score pour l'exemple
-    cur.execute("SELECT title, published_date, summary_fr FROM article_summaries LIMIT 10;")
+    cur.execute(
+        """
+        SELECT interest, title, summary_fr, notes
+        FROM article_summaries
+        WHERE writing_run_id = (SELECT MAX(id) FROM writing_runs)
+        ORDER BY interest ASC, rank ASC;
+        """
+    )
     articles = cur.fetchall()
     cur.close()
     conn.close()
     return render_template_string(HTML_TEMPLATE, data=articles)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8088)
