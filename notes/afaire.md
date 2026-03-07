@@ -291,3 +291,84 @@ for each item, apply this test:
    If yes to 2, 3, or 4, replace it.
 
 Reply only with the 5 final items.
+
+
+
+---------------
+
+war and international conflict
+    War and peace treaties
+    Military intervention operations
+    International conflict resolutions
+    Arms control agreements
+    Global security crises
+
+SpaceX
+    SpaceX launch schedule
+    SpaceX rocket failures
+    SpaceX Starship tests
+    SpaceX Elon Musk news
+    SpaceX satellite launches
+
+Apple
+    Apple stock price
+    Apple product launch
+    Apple earnings report
+    Apple CEO interview
+    Apple supply chain
+
+AI and LLMs
+    Artificial Intelligence news
+    Large language models usage
+    Generative AI capabilities
+    Deep learning algorithms
+    Machine intelligence ethics
+
+french politics
+    French election results
+    National parliamentary votes
+    Government formation process
+    European political alliances
+    Legislative committee reports
+
+
+
+
+Generate exactly 20 keywords or short press-style expressions from the following topic:
+
+TOPIC: war and international conflict
+
+Goal:
+obtain expressions that can be used directly to search for articles on this topic, with minimal ambiguity.
+
+Strict constraints:
+
+* exactly 20 items
+* 1 or 2 words per item
+* one item per line
+* no explanation
+* no table
+* no categories
+* no full sentences
+* each item must be specific to the topic
+* each item must be understandable on its own
+* each item must contain a lexical clue concrete enough to clearly evoke the topic
+* each item must look like an expression that could realistically appear in the press
+
+Prohibitions:
+
+* formulations that could apply to many different topics
+* abstract, institutional, or overly vague expressions
+* expressions likely to bring back many off-topic articles
+
+
+Mandatory self-check before answering:
+for each item, apply this test:
+
+1. when read alone, does it clearly evoke the topic?
+2. would it be too ambiguous in a press search?
+3. could it be reused for many other topics?
+4. does it contain a named entity not present in the topic?
+   If yes to 2, 3, or 4, replace it.
+
+Reply only with the 20 final items.

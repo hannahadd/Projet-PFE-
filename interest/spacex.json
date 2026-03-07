@@ -1,0 +1,20 @@
+{
+  "interest": "SpaceX",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-06T21:56:54.940098+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "SpaceX Starship",
+    "Falcon Heavy",
+    "Dragon capsule",
+    "Crew Dragon",
+    "Starlink satellites",
+    "Raptor engine",
+    "Booster landing",
+    "Orbital flight",
+    "Mars mission",
+    "Elon Musk"
+  ],
+  "raw_output": "SpaceX Starship\nFalcon Heavy\nDragon capsule\nCrew Dragon\nStarlink satellites\nRaptor engine\nBooster landing\nOrbital flight\nMars mission\nElon Musk"
+}

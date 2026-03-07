@@ -52,9 +52,11 @@ projetPFE/ccnews_warc_last5/
 **/*.warc
 **/*.warc.gz
 
+
 # Datasets / merged exports (avoid committing raw corpora)
 **/*.jsonl
 **/merged_dataset.json
+**/merged_dataset.*
 
 # Retrieval / rerank exports (move these to outputs/ ideally)
 **/*candidate*.json

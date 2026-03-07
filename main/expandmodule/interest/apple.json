@@ -1,20 +1,20 @@
 {
   "interest": "Apple",
   "model": "qwen3.5:9b-q4_K_M",
-  "generated_at": "2026-03-06T21:56:55.623371+00:00",
+  "generated_at": "2026-03-06T23:52:30.254219+00:00",
   "status": "ok",
   "n_items": 10,
   "items": [
-    "Apple stock surge",
-    "iPhone launch event",
-    "Tim Cook interview",
-    "Apple Park campus",
-    "iOS update release",
-    "Apple Watch features",
-    "MacBook Pro review",
-    "Apple Services revenue",
-    "Apple CEO salary",
-    "Apple retail stores"
+    "New Apple iPhone",
+    "Stock price news",
+    "Tim Cook CEO",
+    "Pro camera test",
+    "Watch fitness tracking",
+    "MacBook Pro specs",
+    "Store opening hours",
+    "Event announcement",
+    "Services subscription",
+    "Lawsuit Google"
   ],
-  "raw_output": "Apple stock surge\niPhone launch event\nTim Cook interview\nApple Park campus\niOS update release\nApple Watch features\nMacBook Pro review\nApple Services revenue\nApple CEO salary\nApple retail stores"
+  "raw_output": "New Apple iPhone\nStock price news\nTim Cook CEO\nPro camera test\nWatch fitness tracking\nMacBook Pro specs\nStore opening hours\nEvent announcement\nServices subscription\nLawsuit Google"
 }

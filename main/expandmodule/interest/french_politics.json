@@ -1,20 +1,20 @@
 {
   "interest": "french politics",
   "model": "qwen3.5:9b-q4_K_M",
-  "generated_at": "2026-03-06T21:57:00.970363+00:00",
+  "generated_at": "2026-03-06T23:52:33.872355+00:00",
   "status": "ok",
   "n_items": 10,
   "items": [
-    "Emmanuel Macron",
-    "Elisabeth Borne",
-    "Sarkozy trial",
-    "Macron election",
-    "French pension reform",
-    "National assembly vote",
-    "Le Figaro Paris",
-    "Elysee press release",
-    "Senate rejection",
-    "Minister resignation"
+    "Macron presidency",
+    "Le Pen rise",
+    "Senate reform",
+    "Assembly majority",
+    "Municipal votes",
+    "Eurozone role",
+    "Gilets Jaunes",
+    "Immigration debate",
+    "Labour laws",
+    "Diplomacy shifts"
   ],
-  "raw_output": "Emmanuel Macron\nÉlisabeth Borne\nSarkozy trial\nMacron election\nFrench pension reform\nNational assembly vote\nLe Figaro Paris\nÉlysée press release\nSenate rejection\nMinister resignation"
+  "raw_output": "Macron presidency\nLe Pen rise\nSenate reform\nAssembly majority\nMunicipal votes\nEurozone role\nGilets Jaunes\nImmigration debate\nLabour laws\nDiplomacy shifts"
 }

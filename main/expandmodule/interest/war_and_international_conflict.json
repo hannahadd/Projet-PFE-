@@ -1,20 +1,20 @@
 {
   "interest": "war and international conflict",
   "model": "qwen3.5:9b-q4_K_M",
-  "generated_at": "2026-03-06T21:56:50.642664+00:00",
+  "generated_at": "2026-03-06T23:52:25.661268+00:00",
   "status": "ok",
   "n_items": 10,
   "items": [
-    "Global tensions rise",
-    "Russo-Ukrainian conflict continues",
-    "Israel faces siege",
-    "Syria fighting flares",
-    "China tensions high",
-    "Middle East unrest",
-    "NATO expands further",
-    "US military buildup",
-    "Africa civil strife",
-    "World peace threatened"
+    "Global war news",
+    "International conflict report",
+    "Military invasion coverage",
+    "Cross-border fighting",
+    "Peace treaty negotiation",
+    "Arms race escalation",
+    "Refugee crisis update",
+    "Sanctions list published",
+    "Diplomatic summit held",
+    "Ceasefire agreement signed"
   ],
-  "raw_output": "Global tensions rise\nRusso-Ukrainian conflict continues\nIsrael faces siege\nSyria fighting flares\nChina tensions high\nMiddle East unrest\nNATO expands further\nUS military buildup\nAfrica civil strife\nWorld peace threatened"
+  "raw_output": "Global war news\nInternational conflict report\nMilitary invasion coverage\nCross-border fighting\nPeace treaty negotiation\nArms race escalation\nRefugee crisis update\nSanctions list published\nDiplomatic summit held\nCeasefire agreement signed"
 }

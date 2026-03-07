@@ -153,6 +153,10 @@ python main/news_reco.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --interest "IA et les LLMs" --interest "SpaceX" --topk 20
 
+python main/news_reco.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --dense-only --reindex --topk 200
+
 # 7) Rerank -> PostgreSQL (remplacer XXX par retrieval_run_id)
 python main/reranker.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
@@ -216,6 +220,9 @@ python main/writing.py \
   --eval-file main/ingestiontable/evalarticles/evalarticles.json \
   --upsert-articles \
   --out main/ingestiontable/evalarticles/report_rerank_run1.json
+
+
+
 
 
 ---------------------------------------------------------

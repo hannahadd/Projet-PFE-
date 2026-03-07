@@ -485,7 +485,7 @@ def compute_final_scores(
     min_bm25: float = 0.0,
     dense_only: bool = False
 ) -> Dict[str, float]:
-    # normalize BM25
+    # normalize BM25 (kept for threshold filtering)
     max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
 
     # user centers (dense)
@@ -494,30 +494,24 @@ def compute_final_scores(
     out = {}
     for aid, a in candidates.items():
         assert a.embedding is not None
-        # sim_vec = max similarity to centers
+        # Dense score requested:
+        # score = 0.7 * sim(article, center_main) + 0.3 * max(sim(article, expansions))
         if centers:
-            sim_vec = max(cosine(a.embedding, uc) for uc in centers)
+            sim_main = cosine(a.embedding, centers[0])
+            if len(centers) > 1:
+                sim_exp = max(cosine(a.embedding, uc) for uc in centers[1:])
+            else:
+                sim_exp = sim_main
+            sim_vec = 0.7 * sim_main + 0.3 * sim_exp
         else:
             sim_vec = 0.0
 
         bm25_norm = 0.0 if dense_only else (bm25_scores.get(aid, 0.0) / (max_bm25 + 1e-9))
-        # quality placeholder (you can plug real signals later)
-        quality = 1.0
 
         if sim_vec < min_sim and bm25_norm < min_bm25:
             continue
 
-        if dense_only:
-            score = (
-                0.95 * sim_vec
-                + 0.05 * quality
-            )
-        else:
-            score = (
-                0.75 * sim_vec
-                + 0.20 * bm25_norm
-                + 0.05 * quality
-            )
+        score = sim_vec
         out[aid] = float(score)
     return out
 
