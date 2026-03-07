@@ -25,7 +25,6 @@ def _load_src_reranker_module():
 
 
 core = _load_src_reranker_module()
-DEFAULT_INSTRUCTION = core.DEFAULT_INSTRUCTION
 
 
 def main() -> int:
@@ -36,7 +35,7 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--topn", type=int, default=20)
-    parser.add_argument("--instruction", default=DEFAULT_INSTRUCTION)
+    parser.add_argument("--instruction", default=core.DEFAULT_INSTRUCTION)
     parser.add_argument("--hydrate", action="store_true", help="Attach full article from PostgreSQL articles table")
     args = parser.parse_args()
 

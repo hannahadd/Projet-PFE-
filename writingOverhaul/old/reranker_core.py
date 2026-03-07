@@ -9,12 +9,7 @@ import torch
 
 
 DEFAULT_MODEL = "Qwen/Qwen3-Reranker-8B"
-DEFAULT_INSTRUCTION = (
-	"Given a user interest and a news article, score whether the article is "
-	"centrally about the interest. Prefer major new developments, official "
-	"announcements, wars, military escalations, sanctions, launches, product "
-	"releases, mergers, legal decisions, and clear breaking-news events. "
-)
+DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
 
 PREFIX = (
 	"<|im_start|>system\n"
@@ -159,34 +154,12 @@ class QwenReranker:
 
 def _extract_doc_text(hit: Dict[str, Any]) -> str:
 	payload = hit.get("payload") or {}
-
-	title = (payload.get("title") or "").strip()
-	summary = (
-		payload.get("summary")
-		or payload.get("description")
-		or payload.get("excerpt")
-		or ""
-	).strip()
-	text = (payload.get("canonical_text") or payload.get("text") or "").strip()
-
-	# On privilégie le titre + chapô + début du corps,
-	# pas le full text brut qui dilue le signal.
-	lead = text[:1800].strip()
-
-	parts = []
-	if title:
-		parts.append(f"TITLE: {title}")
-	if summary:
-		parts.append(f"SUMMARY: {summary}")
-	if lead:
-		parts.append(f"BODY: {lead}")
-
-	if not parts:
-		url = (payload.get("url") or "").strip()
-		if url:
-			parts.append(f"URL: {url}")
-
-	return "\n\n".join(parts)
+	text = payload.get("canonical_text") or payload.get("text") or ""
+	if text.strip():
+		return str(text)
+	title = payload.get("title") or ""
+	url = payload.get("url") or ""
+	return f"{title}\n{url}".strip()
 
 
 def rerank_file(
