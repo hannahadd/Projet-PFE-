@@ -78,7 +78,7 @@ def detect_lang(text: str) -> Optional[str]:
         return None
 
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def default_cache_dir() -> Path:
@@ -119,6 +119,10 @@ def articles_signature(articles: List["Article"]) -> str:
 
 def namespace_hash(value: str) -> str:
     return hashlib.sha1((value or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def clamp(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
 
 
 # ----------------------------
@@ -255,6 +259,14 @@ class UserProfile:
         return t.strip()
 
 
+@dataclass
+class QuerySpec:
+    text: str
+    weight: float
+    kind: str
+    vec: Optional[np.ndarray] = None
+
+
 # ----------------------------
 # Embedding (BGE-M3 dense)
 # ----------------------------
@@ -316,6 +328,114 @@ class Embedder:
         # normalize for cosine
         dense /= (np.linalg.norm(dense, axis=1, keepdims=True) + 1e-12)
         return dense
+
+
+def merge_query_specs(query_specs: List[QuerySpec]) -> List[QuerySpec]:
+    merged: Dict[str, QuerySpec] = {}
+    order: List[str] = []
+
+    for spec in query_specs:
+        text = str(spec.text or "").strip()
+        if not text:
+            continue
+        key = norm_text(text)
+        weight = 1.0 if spec.kind == "anchor" else float(spec.weight)
+
+        if key not in merged:
+            merged[key] = QuerySpec(text=text, weight=weight, kind=spec.kind, vec=spec.vec)
+            order.append(key)
+            continue
+
+        current = merged[key]
+        if spec.kind == "anchor" and current.kind != "anchor":
+            current.kind = "anchor"
+            current.weight = 1.0
+            current.text = text
+            current.vec = spec.vec
+            continue
+
+        if weight > current.weight:
+            current.weight = weight
+            current.text = text
+            if spec.vec is not None:
+                current.vec = spec.vec
+
+    return [merged[key] for key in order]
+
+
+def build_interest_query_specs(
+    interest: str,
+    expansions_map: Dict[str, List[str]],
+    embedder: "Embedder",
+    max_expansions: int = 6,
+) -> List[QuerySpec]:
+    anchor = str(interest or "").strip()
+    if not anchor:
+        return []
+
+    texts: List[str] = [anchor]
+    seen = {norm_text(anchor)}
+    expansions = expansions_map.get(anchor, []) or []
+
+    for item in expansions:
+        text = str(item or "").strip()
+        key = norm_text(text)
+        if not text or key in seen:
+            continue
+        texts.append(text)
+        seen.add(key)
+        if len(texts) >= 1 + max(0, int(max_expansions)):
+            break
+
+    vecs = embedder.encode(texts, batch_size=min(16, max(1, len(texts))))
+    anchor_vec = np.asarray(vecs[0], dtype=np.float32)
+
+    query_specs: List[QuerySpec] = [
+        QuerySpec(text=anchor, weight=1.0, kind="anchor", vec=anchor_vec)
+    ]
+
+    for text, vec in zip(texts[1:], vecs[1:]):
+        exp_vec = np.asarray(vec, dtype=np.float32)
+        try:
+            cosine_sim = float(np.dot(anchor_vec, exp_vec))
+            if not np.isfinite(cosine_sim):
+                raise ValueError("non-finite cosine")
+            weight = clamp(cosine_sim, 0.15, 0.45)
+        except Exception:
+            weight = 0.30
+
+        query_specs.append(
+            QuerySpec(
+                text=text,
+                weight=min(0.999999, float(weight)),
+                kind="expansion",
+                vec=exp_vec,
+            )
+        )
+
+    return query_specs
+
+
+def build_tag_query_specs(tags: List[str], embedder: "Embedder", weight: float = 0.20) -> List[QuerySpec]:
+    texts: List[str] = []
+    seen: Set[str] = set()
+    for tag in tags:
+        text = str(tag or "").strip()
+        key = norm_text(text)
+        if not text or key in seen:
+            continue
+        texts.append(text)
+        seen.add(key)
+
+    if not texts:
+        return []
+
+    vecs = embedder.encode(texts, batch_size=min(16, max(1, len(texts))))
+    tag_weight = clamp(float(weight), 0.15, 0.45)
+    return [
+        QuerySpec(text=text, weight=tag_weight, kind="expansion", vec=np.asarray(vec, dtype=np.float32))
+        for text, vec in zip(texts, vecs)
+    ]
 
 
 # ----------------------------
@@ -504,63 +624,392 @@ class BM25Index:
     def __init__(self, articles: List[Article]):
         self.articles = articles
         self.id_to_pos = {a.id: i for i, a in enumerate(articles)}
-        corpus_tokens = [simple_tokenize(a.canonical_text) for a in articles]
-        self.bm25 = BM25Okapi(corpus_tokens)
+        self.title_desc_texts = [f"{a.title}\n{a.description}".strip() for a in articles]
+        self.body_texts = [a.canonical_text for a in articles]
+        self.title_desc_bm25 = BM25Okapi([simple_tokenize(text) for text in self.title_desc_texts])
+        self.body_bm25 = BM25Okapi([simple_tokenize(text) for text in self.body_texts])
 
-    def topk(self, query: str, k: int = 200) -> List[Tuple[str, float]]:
-        qt = simple_tokenize(query)
-        scores = self.bm25.get_scores(qt)  # np array aligned with self.articles
+    def _topk_from_scores(self, scores: np.ndarray, k: int) -> List[Tuple[str, float]]:
+        if k <= 0 or len(scores) == 0:
+            return []
         if k >= len(scores):
             idx = np.argsort(-scores)
         else:
-            idx = np.argpartition(-scores, kth=k)[:k]
+            idx = np.argpartition(-scores, kth=k - 1)[:k]
             idx = idx[np.argsort(-scores[idx])]
-        out = [(self.articles[i].id, float(scores[i])) for i in idx if scores[i] > 0]
-        return out
-def compute_final_scores(
+        return [(self.articles[i].id, float(scores[i])) for i in idx if scores[i] > 0]
+
+    def topk_title_desc(self, query: str, k: int = 80) -> List[Tuple[str, float]]:
+        qt = simple_tokenize(query)
+        scores = self.title_desc_bm25.get_scores(qt)
+        return self._topk_from_scores(scores, k)
+
+    def topk_body(self, query: str, k: int = 120) -> List[Tuple[str, float]]:
+        qt = simple_tokenize(query)
+        scores = self.body_bm25.get_scores(qt)
+        return self._topk_from_scores(scores, k)
+
+    def topk_weighted(
+        self,
+        query: str,
+        k_title: int = 80,
+        k_body: int = 120,
+        alpha_title: float = 0.7,
+        alpha_body: float = 0.3,
+    ) -> List[Tuple[str, float]]:
+        qt = simple_tokenize(query)
+        title_scores = np.asarray(self.title_desc_bm25.get_scores(qt), dtype=np.float32)
+        body_scores = np.asarray(self.body_bm25.get_scores(qt), dtype=np.float32)
+        scores = alpha_title * title_scores + alpha_body * body_scores
+        return self._topk_from_scores(scores, max(k_title, k_body))
+
+    def topk(self, query: str, k: int = 200) -> List[Tuple[str, float]]:
+        return self.topk_body(query, k=k)
+
+
+def accumulate_weighted_rrf(
+    score_map: Dict[str, float],
+    article_id: str,
+    query_weight: float,
+    rank: int,
+    rrf_k: int,
+) -> None:
+    if rank <= 0:
+        return
+    score_map[article_id] = score_map.get(article_id, 0.0) + (float(query_weight) / float(rrf_k + rank))
+
+
+def normalize_score_dict(score_map: Dict[str, float]) -> Dict[str, float]:
+    if not score_map:
+        return {}
+    vals = list(score_map.values())
+    lo = min(vals)
+    hi = max(vals)
+    if hi <= 0:
+        return {k: 0.0 for k in score_map}
+    if hi - lo <= 1e-12:
+        return {k: 1.0 for k, v in score_map.items() if v > 0}
+    return {k: float((v - lo) / (hi - lo)) for k, v in score_map.items()}
+
+
+def weighted_rrf(
+    candidate_ids: Set[str],
+    dense_rrf_scores: Dict[str, float],
+    lex_rrf_scores: Dict[str, float],
+) -> Dict[str, float]:
+    dense_subset = {aid: dense_rrf_scores.get(aid, 0.0) for aid in candidate_ids if dense_rrf_scores.get(aid, 0.0) > 0}
+    lex_subset = {aid: lex_rrf_scores.get(aid, 0.0) for aid in candidate_ids if lex_rrf_scores.get(aid, 0.0) > 0}
+    dense_norm = normalize_score_dict(dense_subset)
+    lex_norm = normalize_score_dict(lex_subset)
+    return {
+        aid: float(0.65 * dense_norm.get(aid, 0.0) + 0.35 * lex_norm.get(aid, 0.0))
+        for aid in candidate_ids
+    }
+
+
+def _article_from_hit(hit: qm.ScoredPoint, id_to_article: Dict[str, Article]) -> Optional[Article]:
+    aid = str(hit.id)
+    article = id_to_article.get(aid)
+    if article is not None:
+        return article
+    payload = getattr(hit, "payload", None) or {}
+    if not payload:
+        return None
+    article = Article.from_qdrant_payload(payload, article_id=aid)
+    id_to_article[aid] = article
+    return article
+
+
+def collect_dense_candidates_multiquery(
+    qdrant_index: DenseIndexQdrant,
+    id_to_article: Dict[str, Article],
+    query_specs: List[QuerySpec],
+    days: int,
+    dense_per_anchor: int,
+    dense_per_expansion: int,
+    rrf_k: int,
+) -> Tuple[Set[str], Dict[str, float], int]:
+    candidate_ids: Set[str] = set()
+    rrf_scores: Dict[str, float] = {}
+    total_hits = 0
+
+    for spec in query_specs:
+        if spec.vec is None:
+            continue
+        limit = dense_per_anchor if spec.kind == "anchor" else dense_per_expansion
+        if limit <= 0:
+            continue
+        hits = qdrant_index.search(spec.vec, limit=limit, days=days)
+        total_hits += len(hits)
+        for rank, hit in enumerate(hits, 1):
+            article = _article_from_hit(hit, id_to_article)
+            if article is None:
+                continue
+            candidate_ids.add(article.id)
+            accumulate_weighted_rrf(rrf_scores, article.id, spec.weight, rank, rrf_k)
+
+    return candidate_ids, rrf_scores, total_hits
+
+
+def collect_bm25_candidates_multiquery(
+    bm25_index: BM25Index,
+    id_to_article: Dict[str, Article],
+    query_specs: List[QuerySpec],
+    bm25_title_k: int,
+    bm25_body_k: int,
+    rrf_k: int,
+) -> Tuple[Set[str], Dict[str, float], Dict[str, float], Dict[str, float], int]:
+    candidate_ids: Set[str] = set()
+    rrf_scores: Dict[str, float] = {}
+    title_best_scores: Dict[str, float] = {}
+    body_best_scores: Dict[str, float] = {}
+    total_hits = 0
+
+    for spec in query_specs:
+        if bm25_title_k > 0:
+            title_hits = bm25_index.topk_title_desc(spec.text, k=bm25_title_k)
+            total_hits += len(title_hits)
+            for rank, (aid, score) in enumerate(title_hits, 1):
+                if aid not in id_to_article:
+                    continue
+                candidate_ids.add(aid)
+                weighted_score = float(spec.weight) * float(score)
+                title_best_scores[aid] = max(title_best_scores.get(aid, 0.0), weighted_score)
+                accumulate_weighted_rrf(rrf_scores, aid, spec.weight, rank, rrf_k)
+
+        if bm25_body_k > 0:
+            body_hits = bm25_index.topk_body(spec.text, k=bm25_body_k)
+            total_hits += len(body_hits)
+            for rank, (aid, score) in enumerate(body_hits, 1):
+                if aid not in id_to_article:
+                    continue
+                candidate_ids.add(aid)
+                weighted_score = float(spec.weight) * float(score)
+                body_best_scores[aid] = max(body_best_scores.get(aid, 0.0), weighted_score)
+                accumulate_weighted_rrf(rrf_scores, aid, spec.weight, rank, rrf_k)
+
+    return candidate_ids, rrf_scores, title_best_scores, body_best_scores, total_hits
+
+
+def compute_exact_similarity_features(
     candidates: Dict[str, Article],
-    user: UserProfile,
-    bm25_scores: Dict[str, float],
+    query_specs: List[QuerySpec],
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    candidate_ids = list(candidates.keys())
+    active_specs = [spec for spec in query_specs if spec.vec is not None]
+    if not candidate_ids or not active_specs:
+        zeros = {aid: 0.0 for aid in candidate_ids}
+        return zeros, zeros.copy()
+
+    cand_mat = np.vstack([candidates[aid].embedding for aid in candidate_ids]).astype(np.float32, copy=False)
+    query_mat = np.vstack([spec.vec for spec in active_specs]).astype(np.float32, copy=False)
+    query_weights = np.asarray([spec.weight for spec in active_specs], dtype=np.float32)
+
+    weighted_sims = (cand_mat @ query_mat.T) * query_weights[None, :]
+    dense_max_arr = np.clip(weighted_sims.max(axis=1), 0.0, 1.0)
+
+    if weighted_sims.shape[1] == 1:
+        dense_cov_arr = dense_max_arr.copy()
+    else:
+        top2 = np.sort(weighted_sims, axis=1)[:, -2:]
+        dense_cov_arr = np.clip(top2.mean(axis=1), 0.0, 1.0)
+
+    dense_max = {aid: float(val) for aid, val in zip(candidate_ids, dense_max_arr.tolist())}
+    dense_cov = {aid: float(val) for aid, val in zip(candidate_ids, dense_cov_arr.tolist())}
+    return dense_max, dense_cov
+
+
+def compute_multiquery_final_scores(
+    candidate_ids: List[str],
+    s_rrf: Dict[str, float],
+    s_dense_max: Dict[str, float],
+    s_dense_cov: Dict[str, float],
+    s_lex_max: Dict[str, float],
+    s_lex_title: Dict[str, float],
     min_sim: float = 0.0,
     min_bm25: float = 0.0,
-    dense_only: bool = False
-) -> Dict[str, float]:
-    # normalize BM25 (kept for threshold filtering)
-    max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
+) -> Tuple[Dict[str, float], Dict[str, Dict[str, float]]]:
+    final_scores: Dict[str, float] = {}
+    feature_map: Dict[str, Dict[str, float]] = {}
 
-    # user centers (dense)
-    centers = [c.vec for c in user.centers] if user.centers else []
+    for aid in candidate_ids:
+        dense_max = float(s_dense_max.get(aid, 0.0))
+        lex_max = float(s_lex_max.get(aid, 0.0))
+        if dense_max < min_sim and lex_max < min_bm25:
+            continue
 
-    cand_ids = list(candidates.keys())
-    if not cand_ids:
-        return {}
-
-    cand_mat = np.vstack([candidates[aid].embedding for aid in cand_ids]).astype(np.float32, copy=False)
-
-    if centers:
-        center_mat = np.vstack(centers).astype(np.float32, copy=False)
-        sims = cand_mat @ center_mat.T
-        sim_main = sims[:, 0]
-        sim_exp = sims[:, 1:].max(axis=1) if sims.shape[1] > 1 else sim_main
-        sim_vec = 0.7 * sim_main + 0.3 * sim_exp
-    else:
-        sim_vec = np.zeros(len(cand_ids), dtype=np.float32)
-
-    if dense_only:
-        bm25_norm = np.zeros(len(cand_ids), dtype=np.float32)
-    else:
-        bm25_norm = np.asarray(
-            [bm25_scores.get(aid, 0.0) / (max_bm25 + 1e-9) for aid in cand_ids],
-            dtype=np.float32,
+        dense_cov = float(s_dense_cov.get(aid, dense_max))
+        rrf_score = float(s_rrf.get(aid, 0.0))
+        lex_title = float(s_lex_title.get(aid, 0.0))
+        final_score = (
+            0.45 * rrf_score
+            + 0.30 * dense_max
+            + 0.15 * dense_cov
+            + 0.10 * lex_max
         )
 
-    keep_mask = (sim_vec >= min_sim) | (bm25_norm >= min_bm25)
+        final_scores[aid] = float(final_score)
+        feature_map[aid] = {
+            "s_rrf": rrf_score,
+            "s_dense_max": dense_max,
+            "s_dense_cov": dense_cov,
+            "s_lex_max": lex_max,
+            "s_lex_title": lex_title,
+            "final_score": float(final_score),
+        }
 
-    out = {}
-    for aid, keep, score in zip(cand_ids, keep_mask.tolist(), sim_vec.tolist()):
-        if keep:
-            out[aid] = float(score)
-    return out
+    return final_scores, feature_map
+
+
+def retrieve_feed_multiquery_for_interest(
+    qdrant_index: DenseIndexQdrant,
+    bm25_index: Optional[BM25Index],
+    id_to_article: Dict[str, Article],
+    query_specs: List[QuerySpec],
+    top_k: int,
+    days: int = 14,
+    dense_per_anchor: int = 300,
+    dense_per_expansion: int = 120,
+    bm25_title_k: int = 80,
+    bm25_body_k: int = 120,
+    lang_filter: Optional[Set[str]] = None,
+    min_sim: float = 0.0,
+    min_bm25: float = 0.0,
+    dense_only: bool = False,
+    rrf_k: int = 60,
+    candidate_cap: int = 800,
+    scores_out: Optional[Dict[str, float]] = None,
+    debug: bool = False,
+    debug_label: Optional[str] = None,
+) -> List[Article]:
+    label = debug_label or "interest"
+    query_specs = merge_query_specs(query_specs)
+    if not query_specs:
+        return []
+
+    if debug:
+        print(f"[retrieval:{label}] query_specs={len(query_specs)}")
+
+    dense_candidate_ids, dense_rrf_raw, dense_hits = collect_dense_candidates_multiquery(
+        qdrant_index=qdrant_index,
+        id_to_article=id_to_article,
+        query_specs=query_specs,
+        days=days,
+        dense_per_anchor=dense_per_anchor,
+        dense_per_expansion=dense_per_expansion,
+        rrf_k=rrf_k,
+    )
+
+    bm25_candidate_ids: Set[str] = set()
+    lex_rrf_raw: Dict[str, float] = {}
+    title_best_raw: Dict[str, float] = {}
+    body_best_raw: Dict[str, float] = {}
+    bm25_hits = 0
+    if not dense_only and bm25_index is not None:
+        (
+            bm25_candidate_ids,
+            lex_rrf_raw,
+            title_best_raw,
+            body_best_raw,
+            bm25_hits,
+        ) = collect_bm25_candidates_multiquery(
+            bm25_index=bm25_index,
+            id_to_article=id_to_article,
+            query_specs=query_specs,
+            bm25_title_k=bm25_title_k,
+            bm25_body_k=bm25_body_k,
+            rrf_k=rrf_k,
+        )
+
+    union_ids = dense_candidate_ids | bm25_candidate_ids
+    if debug:
+        print(
+            f"[retrieval:{label}] dense_candidates={len(dense_candidate_ids)} raw_dense_hits={dense_hits} "
+            f"bm25_candidates={len(bm25_candidate_ids)} raw_bm25_hits={bm25_hits} union_before_cap={len(union_ids)}"
+        )
+
+    if not union_ids:
+        return []
+
+    rrf_scores = weighted_rrf(union_ids, dense_rrf_raw, lex_rrf_raw)
+    ordered_union = sorted(union_ids, key=lambda aid: rrf_scores.get(aid, 0.0), reverse=True)
+    capped_ids = ordered_union[: max(1, int(candidate_cap))]
+    candidate_ids = set(capped_ids)
+
+    if debug:
+        print(f"[retrieval:{label}] union_after_cap={len(candidate_ids)}")
+
+    candidates = {
+        aid: id_to_article[aid]
+        for aid in capped_ids
+        if aid in id_to_article
+    }
+    if not candidates:
+        return []
+
+    missing_ids = [aid for aid, article in candidates.items() if article.embedding is None]
+    if missing_ids:
+        vecs = qdrant_index.retrieve_vectors(missing_ids, batch_size=256)
+        for aid in missing_ids:
+            vec = vecs.get(aid)
+            if vec is not None:
+                candidates[aid].embedding = vec
+
+    candidates = {aid: article for aid, article in candidates.items() if article.embedding is not None}
+    if not candidates:
+        return []
+
+    if lang_filter:
+        candidates = {
+            aid: article
+            for aid, article in candidates.items()
+            if (article.lang or "").lower() in lang_filter
+        }
+        if not candidates:
+            return []
+
+    surviving_ids = list(candidates.keys())
+    surviving_set = set(surviving_ids)
+    rrf_scores = weighted_rrf(surviving_set, dense_rrf_raw, lex_rrf_raw)
+
+    title_best_norm = normalize_score_dict({aid: title_best_raw.get(aid, 0.0) for aid in surviving_ids if title_best_raw.get(aid, 0.0) > 0})
+    body_best_norm = normalize_score_dict({aid: body_best_raw.get(aid, 0.0) for aid in surviving_ids if body_best_raw.get(aid, 0.0) > 0})
+    lex_max = {aid: max(title_best_norm.get(aid, 0.0), body_best_norm.get(aid, 0.0)) for aid in surviving_ids}
+
+    dense_max, dense_cov = compute_exact_similarity_features(candidates, query_specs)
+    final_scores, feature_map = compute_multiquery_final_scores(
+        candidate_ids=surviving_ids,
+        s_rrf=rrf_scores,
+        s_dense_max=dense_max,
+        s_dense_cov=dense_cov,
+        s_lex_max=lex_max,
+        s_lex_title=title_best_norm,
+        min_sim=min_sim,
+        min_bm25=min_bm25 if not dense_only else 0.0,
+    )
+
+    ordered_ids = sorted(final_scores.keys(), key=lambda aid: final_scores[aid], reverse=True)
+    final_ids = ordered_ids[:top_k]
+
+    if debug:
+        print(f"[retrieval:{label}] survivors_after_thresholds={len(final_scores)}")
+        for rank, aid in enumerate(final_ids[:5], 1):
+            feats = feature_map.get(aid, {})
+            article = candidates[aid]
+            print(
+                f"[retrieval:{label}] top{rank} score={final_scores[aid]:.4f} "
+                f"rrf={feats.get('s_rrf', 0.0):.4f} dense_max={feats.get('s_dense_max', 0.0):.4f} "
+                f"dense_cov={feats.get('s_dense_cov', 0.0):.4f} lex_max={feats.get('s_lex_max', 0.0):.4f} "
+                f"title={article.title[:120]}"
+            )
+
+    if scores_out is not None:
+        scores_out.clear()
+        for aid in final_ids:
+            scores_out[aid] = float(final_scores.get(aid, 0.0))
+
+    return [candidates[aid] for aid in final_ids]
+
 
 def retrieve_feed(
     qdrant_index: DenseIndexQdrant,
@@ -577,77 +1026,34 @@ def retrieve_feed(
     dense_only: bool = False,
     scores_out: Optional[Dict[str, float]] = None,
 ) -> List[Article]:
+    query_specs = merge_query_specs(
+        [QuerySpec(text=text, weight=1.0, kind="anchor") for text in user.interests_text if str(text or "").strip()]
+    )
+    if query_specs:
+        embedder = Embedder("BAAI/bge-m3", use_fp16=True)
+        vecs = embedder.encode([spec.text for spec in query_specs], batch_size=min(16, len(query_specs)))
+        for spec, vec in zip(query_specs, vecs):
+            spec.vec = np.asarray(vec, dtype=np.float32)
 
-    # 1) Candidate generation
-    candidates: Dict[str, Article] = {}
-
-    # Dense ANN per center
-    for c in user.centers:
-        hits = qdrant_index.search(c.vec, limit=dense_per_center, days=days)
-        for h in hits:
-            aid = str(h.id)
-            a = id_to_article.get(aid)
-            if a is None:
-                payload = getattr(h, "payload", None) or {}
-                if payload:
-                    a = Article.from_qdrant_payload(payload, article_id=aid)
-                    id_to_article[aid] = a
-            if a is not None:
-                candidates[aid] = a
-
-    # BM25 candidates
-    qtext = user.query_text()
-    bm25_scores: Dict[str, float] = {}
-    if not dense_only and bm25_index is not None:
-        bm25_top = bm25_index.topk(qtext, k=bm25_k)
-        bm25_scores = {aid: s for aid, s in bm25_top}
-        for aid, _ in bm25_top:
-            if aid in id_to_article:
-                candidates[aid] = id_to_article[aid]
-
-    if not candidates:
-        return []
-
-    # Ensure embeddings are loaded (for BM25-only candidates when we skipped re-embedding)
-    missing_ids = [aid for aid, a in candidates.items() if a.embedding is None]
-    if missing_ids:
-        vecs = qdrant_index.retrieve_vectors(missing_ids, batch_size=256)
-        for aid in missing_ids:
-            v = vecs.get(aid)
-            if v is not None:
-                candidates[aid].embedding = v
-
-    # Drop candidates still missing vectors
-    candidates = {aid: a for aid, a in candidates.items() if a.embedding is not None}
-    if not candidates:
-        return []
-
-    # 2) Optional language filter
-    if lang_filter:
-        candidates = {aid: a for aid, a in candidates.items() if (a.lang or "").lower() in lang_filter}
-        if not candidates:
-            return []
-
-    # 3) Scoring
-    scores = compute_final_scores(
-        candidates,
-        user,
-        bm25_scores,
+    return retrieve_feed_multiquery_for_interest(
+        qdrant_index=qdrant_index,
+        bm25_index=bm25_index,
+        id_to_article=id_to_article,
+        query_specs=query_specs,
+        top_k=top_k,
+        days=days,
+        dense_per_anchor=dense_per_center,
+        dense_per_expansion=max(1, int(round(dense_per_center * 0.4))),
+        bm25_title_k=bm25_k,
+        bm25_body_k=bm25_k,
+        lang_filter=lang_filter,
         min_sim=min_sim,
         min_bm25=min_bm25,
         dense_only=dense_only,
+        rrf_k=60,
+        candidate_cap=max(800, top_k),
+        scores_out=scores_out,
     )
-
-    # 4) Sort by score desc and keep top_k
-    ordered_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
-    final_ids = ordered_ids[:top_k]
-
-    if scores_out is not None:
-        scores_out.clear()
-        for aid in final_ids:
-            scores_out[aid] = float(scores.get(aid, 0.0))
-
-    return [candidates[aid] for aid in final_ids]
 
 
 # ----------------------------
@@ -762,6 +1168,14 @@ def main(
     dense_only: bool = False,
     aggregate: bool = False,
     top_k_per_interest: int = 20,
+    max_expansions_per_interest: int = 6,
+    dense_per_anchor: int = 300,
+    dense_per_expansion: int = 120,
+    bm25_title_k: int = 80,
+    bm25_body_k: int = 120,
+    rrf_k: int = 60,
+    candidate_cap: int = 800,
+    debug_retrieval: bool = False,
     out_path: Optional[str] = None,
 ):
     # 1) Load + dedup
@@ -829,10 +1243,10 @@ def main(
     # 6) Local map
     id_to_article = {a.id: a for a in articles}
 
-    # 7) Embedder for user profile
+    # 7) Embedder for queries
     embedder = Embedder("BAAI/bge-m3", use_fp16=True)
 
-    # 8) Build user profile (onboarding)
+    # 8) Build interest list
     interests = [i for i in (user_interests or []) if i and i.strip()]
     if not interests:
         interests = [
@@ -853,33 +1267,49 @@ def main(
         min_bm25 = 0.0
 
     export_blocks: List[Dict[str, Any]] = []
+    expansions_map: Dict[str, List[str]] = {}
+
+    def _build_specs_for_interest(interest_text: str) -> List[QuerySpec]:
+        specs = build_interest_query_specs(
+            interest=interest_text,
+            expansions_map=expansions_map,
+            embedder=embedder,
+            max_expansions=max_expansions_per_interest,
+        )
+        if tags:
+            specs = merge_query_specs(specs + build_tag_query_specs(tags, embedder))
+        return specs
 
     # Default behavior:
     # - If multiple interests are provided, return 20 articles per interest.
     # - Use --aggregate to get a single combined feed.
     if aggregate or len(interests) <= 1:
-        user = UserProfile(
-            interests_text=interests,
-            interests_tags=tags,
-        )
-        user.build_from_onboarding(embedder.encode, k_max=5)
+        aggregate_specs: List[QuerySpec] = []
+        for interest in interests:
+            aggregate_specs.extend(_build_specs_for_interest(interest))
+        aggregate_specs = merge_query_specs(aggregate_specs)
 
         scores_map: Dict[str, float] = {}
-        feed = retrieve_feed(
+        feed = retrieve_feed_multiquery_for_interest(
             qdrant_index=qindex,
             bm25_index=bm25,
             id_to_article=id_to_article,
-            user=user,
-            dense_per_center=250,
-            bm25_k=250,
-            days=days,
+            query_specs=aggregate_specs,
             top_k=top_k_per_interest,
-            tau_hours=tau_hours,
+            days=days,
+            dense_per_anchor=dense_per_anchor,
+            dense_per_expansion=dense_per_expansion,
+            bm25_title_k=bm25_title_k,
+            bm25_body_k=bm25_body_k,
             lang_filter=lang_filter,
             min_sim=min_sim,
             min_bm25=min_bm25,
             dense_only=dense_only,
+            rrf_k=rrf_k,
+            candidate_cap=candidate_cap,
             scores_out=scores_map,
+            debug=debug_retrieval,
+            debug_label="aggregate",
         )
 
         print("\n--- FEED (AGGREGATE) ---")
@@ -943,28 +1373,29 @@ def main(
     print("\n--- FEED (PER INTEREST) ---")
     total = 0
     for j, interest in enumerate(interests, 1):
-        user = UserProfile(
-            interests_text=[interest],
-            interests_tags=tags,
-        )
-        user.build_from_onboarding(embedder.encode, k_max=1)
+        query_specs = _build_specs_for_interest(interest)
 
         scores_map: Dict[str, float] = {}
-        feed = retrieve_feed(
+        feed = retrieve_feed_multiquery_for_interest(
             qdrant_index=qindex,
             bm25_index=bm25,
             id_to_article=id_to_article,
-            user=user,
-            dense_per_center=250,
-            bm25_k=250,
-            days=days,
+            query_specs=query_specs,
             top_k=top_k_per_interest,
-            tau_hours=tau_hours,
+            days=days,
+            dense_per_anchor=dense_per_anchor,
+            dense_per_expansion=dense_per_expansion,
+            bm25_title_k=bm25_title_k,
+            bm25_body_k=bm25_body_k,
             lang_filter=lang_filter,
             min_sim=min_sim,
             min_bm25=min_bm25,
             dense_only=dense_only,
+            rrf_k=rrf_k,
+            candidate_cap=candidate_cap,
             scores_out=scores_map,
+            debug=debug_retrieval,
+            debug_label=interest,
         )
 
         print(f"\n### Interest {j}/{len(interests)}: {interest} (n={len(feed)})")
@@ -1104,6 +1535,14 @@ if __name__ == "__main__":
         default=20,
         help="Number of articles to return per interest (or total if --aggregate)",
     )
+    parser.add_argument("--max-expansions-per-interest", type=int, default=6)
+    parser.add_argument("--dense-per-anchor", type=int, default=300)
+    parser.add_argument("--dense-per-expansion", type=int, default=120)
+    parser.add_argument("--bm25-title-k", type=int, default=80)
+    parser.add_argument("--bm25-body-k", type=int, default=120)
+    parser.add_argument("--rrf-k", type=int, default=60)
+    parser.add_argument("--candidate-cap", type=int, default=800)
+    parser.add_argument("--debug-retrieval", action="store_true")
 
     parser.add_argument(
         "--out",
@@ -1130,5 +1569,13 @@ if __name__ == "__main__":
         dense_only=args.dense_only,
         aggregate=args.aggregate,
         top_k_per_interest=args.topk,
+        max_expansions_per_interest=args.max_expansions_per_interest,
+        dense_per_anchor=args.dense_per_anchor,
+        dense_per_expansion=args.dense_per_expansion,
+        bm25_title_k=args.bm25_title_k,
+        bm25_body_k=args.bm25_body_k,
+        rrf_k=args.rrf_k,
+        candidate_cap=args.candidate_cap,
+        debug_retrieval=args.debug_retrieval,
         out_path=args.out,
     )

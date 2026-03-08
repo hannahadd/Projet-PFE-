@@ -133,17 +133,71 @@ def load_interest_expansions(expansions_dir: Optional[str]) -> Dict[str, List[st
     return mapping
 
 
-def _expand_interest(interest: str) -> List[str]:
-    base = (interest or "").strip()
-    if not base:
-        return []
-    expanded = INTEREST_EXPANSIONS.get(base, [base])
-    out: List[str] = []
-    for s in expanded:
-        s2 = str(s).strip()
-        if s2 and s2 not in out:
-            out.append(s2)
-    return out
+def _build_query_specs_for_interest(
+    interest: str,
+    embedder: Any,
+    tags: List[str],
+    max_expansions_per_interest: int,
+) -> List[Any]:
+    specs = core.build_interest_query_specs(
+        interest=interest,
+        expansions_map=INTEREST_EXPANSIONS,
+        embedder=embedder,
+        max_expansions=max_expansions_per_interest,
+    )
+    if tags:
+        specs = core.merge_query_specs(specs + core.build_tag_query_specs(tags, embedder))
+    return specs
+
+
+def _build_aggregate_query_specs(
+    interests: List[str],
+    embedder: Any,
+    tags: List[str],
+    max_expansions_per_interest: int,
+) -> List[Any]:
+    specs: List[Any] = []
+    for interest in interests:
+        specs.extend(_build_query_specs_for_interest(interest, embedder, tags, max_expansions_per_interest))
+    return core.merge_query_specs(specs)
+
+
+def _resolve_retrieval_parameters(args: argparse.Namespace) -> Dict[str, int]:
+    dense_per_anchor = int(
+        args.dense_per_anchor
+        if args.dense_per_anchor is not None
+        else (args.dense_per_center if args.dense_per_center is not None else 300)
+    )
+    if args.dense_per_expansion is not None:
+        dense_per_expansion = int(args.dense_per_expansion)
+    elif args.dense_per_center is not None:
+        dense_per_expansion = max(1, int(round(args.dense_per_center * 0.4)))
+    else:
+        dense_per_expansion = 120
+
+    if args.bm25_title_k is not None:
+        bm25_title_k = int(args.bm25_title_k)
+    elif args.bm25_k is not None:
+        bm25_title_k = int(args.bm25_k)
+    else:
+        bm25_title_k = 80
+
+    if args.bm25_body_k is not None:
+        bm25_body_k = int(args.bm25_body_k)
+    elif args.bm25_k is not None:
+        bm25_body_k = int(args.bm25_k)
+    else:
+        bm25_body_k = 120
+
+    return {
+        "max_expansions_per_interest": int(args.max_expansions_per_interest),
+        "dense_per_anchor": dense_per_anchor,
+        "dense_per_expansion": dense_per_expansion,
+        "bm25_title_k": bm25_title_k,
+        "bm25_body_k": bm25_body_k,
+        "rrf_k": int(args.rrf_k),
+        "candidate_cap": int(args.candidate_cap),
+    }
 
 
 def _build_export_blocks(
@@ -160,34 +214,45 @@ def _build_export_blocks(
     min_sim: float,
     min_bm25: float,
     dense_only: bool,
-    dense_per_center: int,
-    bm25_k: int,
+    max_expansions_per_interest: int,
+    dense_per_anchor: int,
+    dense_per_expansion: int,
+    bm25_title_k: int,
+    bm25_body_k: int,
+    rrf_k: int,
+    candidate_cap: int,
+    debug_retrieval: bool,
 ) -> List[Dict[str, Any]]:
     blocks: List[Dict[str, Any]] = []
 
     if aggregate or len(interests) <= 1:
-        expanded: List[str] = []
-        for interest in interests:
-            expanded.extend(_expand_interest(interest))
-        if not expanded:
-            expanded = interests
-        user = core.UserProfile(interests_text=expanded, interests_tags=tags)
-        user.build_from_onboarding(embedder.encode, k_max=min(8, len(expanded) or 1))
+        query_specs = _build_aggregate_query_specs(
+            interests=interests,
+            embedder=embedder,
+            tags=tags,
+            max_expansions_per_interest=max_expansions_per_interest,
+        )
         scores_map: Dict[str, float] = {}
-        feed = core.retrieve_feed(
+        feed = core.retrieve_feed_multiquery_for_interest(
             qdrant_index=qindex,
             bm25_index=bm25,
             id_to_article=id_to_article,
-            user=user,
-            dense_per_center=dense_per_center,
-            bm25_k=bm25_k,
-            days=days,
             top_k=topk,
+            query_specs=query_specs,
+            days=days,
+            dense_per_anchor=dense_per_anchor,
+            dense_per_expansion=dense_per_expansion,
+            bm25_title_k=bm25_title_k,
+            bm25_body_k=bm25_body_k,
             lang_filter=lang_filter,
             min_sim=min_sim,
             min_bm25=min_bm25,
             dense_only=dense_only,
+            rrf_k=rrf_k,
+            candidate_cap=candidate_cap,
             scores_out=scores_map,
+            debug=debug_retrieval,
+            debug_label="aggregate",
         )
         blocks.append(
             {
@@ -217,24 +282,33 @@ def _build_export_blocks(
         return blocks
 
     for interest in interests:
-        expanded = _expand_interest(interest)
-        user = core.UserProfile(interests_text=expanded, interests_tags=tags)
-        user.build_from_onboarding(embedder.encode, k_max=min(6, len(expanded) or 1))
+        query_specs = _build_query_specs_for_interest(
+            interest=interest,
+            embedder=embedder,
+            tags=tags,
+            max_expansions_per_interest=max_expansions_per_interest,
+        )
         scores_map: Dict[str, float] = {}
-        feed = core.retrieve_feed(
+        feed = core.retrieve_feed_multiquery_for_interest(
             qdrant_index=qindex,
             bm25_index=bm25,
             id_to_article=id_to_article,
-            user=user,
-            dense_per_center=dense_per_center,
-            bm25_k=bm25_k,
-            days=days,
             top_k=topk,
+            query_specs=query_specs,
+            days=days,
+            dense_per_anchor=dense_per_anchor,
+            dense_per_expansion=dense_per_expansion,
+            bm25_title_k=bm25_title_k,
+            bm25_body_k=bm25_body_k,
             lang_filter=lang_filter,
             min_sim=min_sim,
             min_bm25=min_bm25,
             dense_only=dense_only,
+            rrf_k=rrf_k,
+            candidate_cap=candidate_cap,
             scores_out=scores_map,
+            debug=debug_retrieval,
+            debug_label=interest,
         )
         blocks.append(
             {
@@ -286,8 +360,16 @@ def main() -> int:
     parser.add_argument("--dense-only", action="store_true")
     parser.add_argument("--aggregate", action="store_true")
     parser.add_argument("--topk", type=int, default=20)
-    parser.add_argument("--dense-per-center", type=int, default=400)
-    parser.add_argument("--bm25-k", type=int, default=400)
+    parser.add_argument("--dense-per-center", type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--bm25-k", type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--max-expansions-per-interest", type=int, default=6)
+    parser.add_argument("--dense-per-anchor", type=int, default=None)
+    parser.add_argument("--dense-per-expansion", type=int, default=None)
+    parser.add_argument("--bm25-title-k", type=int, default=None)
+    parser.add_argument("--bm25-body-k", type=int, default=None)
+    parser.add_argument("--rrf-k", type=int, default=60)
+    parser.add_argument("--candidate-cap", type=int, default=800)
+    parser.add_argument("--debug-retrieval", action="store_true")
     args = parser.parse_args()
 
     if args.reindex and args.resume_index:
@@ -371,6 +453,7 @@ def main() -> int:
     if args.lang:
         lang_filter = {l.strip().lower() for l in args.lang.split(",") if l.strip()}
     min_bm25 = 0.0 if args.dense_only else args.min_bm25
+    retrieval_params = _resolve_retrieval_parameters(args)
 
     blocks = _build_export_blocks(
         interests=interests,
@@ -386,8 +469,14 @@ def main() -> int:
         min_sim=float(args.min_sim),
         min_bm25=float(min_bm25),
         dense_only=bool(args.dense_only),
-        dense_per_center=int(args.dense_per_center),
-        bm25_k=int(args.bm25_k),
+        max_expansions_per_interest=int(retrieval_params["max_expansions_per_interest"]),
+        dense_per_anchor=int(retrieval_params["dense_per_anchor"]),
+        dense_per_expansion=int(retrieval_params["dense_per_expansion"]),
+        bm25_title_k=int(retrieval_params["bm25_title_k"]),
+        bm25_body_k=int(retrieval_params["bm25_body_k"]),
+        rrf_k=int(retrieval_params["rrf_k"]),
+        candidate_cap=int(retrieval_params["candidate_cap"]),
+        debug_retrieval=bool(args.debug_retrieval),
     )
 
     run_id = store.create_retrieval_run(
