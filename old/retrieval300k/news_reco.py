@@ -43,48 +43,6 @@ DEFAULT_INTERESTS: List[str] = [
 INTEREST_EXPANSIONS: Dict[str, List[str]] = {}
 
 
-def _fetch_articles_cache_metadata(store: PostgresStore) -> Dict[str, Any]:
-    with store.connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*), MAX(updated_at) FROM articles")
-            count, max_updated_at = cur.fetchone()
-    return {
-        "count": int(count or 0),
-        "max_updated_at": max_updated_at.isoformat() if max_updated_at is not None else None,
-    }
-
-
-def _load_postgres_articles_cached(store: PostgresStore, max_articles: Optional[int]) -> tuple[List[Any], int, bool]:
-    meta = _fetch_articles_cache_metadata(store)
-    signature = "|".join(
-        [
-            f"v={core.CACHE_VERSION}",
-            f"db={core.namespace_hash(store.db_url)}",
-            f"count={meta['count']}",
-            f"max_updated_at={meta['max_updated_at']}",
-            f"limit={max_articles if max_articles is not None else 'all'}",
-        ]
-    )
-    cache_dir = core.default_cache_dir()
-    cache_path = cache_dir / f"articles_pg_{core.namespace_hash(store.db_url)}_{max_articles if max_articles is not None else 'all'}.pkl"
-    cached = core.load_pickle_cache(cache_path)
-    if cached and cached.get("signature") == signature and isinstance(cached.get("articles"), list):
-        return cached["articles"], int(cached.get("raw_count") or len(cached["articles"])), True
-
-    db_rows = store.fetch_articles(limit=max_articles)
-    raw_articles = [core.Article.from_dict(r) for r in db_rows]
-    articles = core.dedup_articles(raw_articles)
-    core.save_pickle_cache(
-        cache_path,
-        {
-            "signature": signature,
-            "raw_count": len(raw_articles),
-            "articles": articles,
-        },
-    )
-    return articles, len(raw_articles), False
-
-
 def _candidate_expansion_dirs() -> List[Path]:
     here = Path(__file__).resolve().parent
     return [
@@ -309,25 +267,18 @@ def main() -> int:
 
     tags = [t.strip() for t in (args.tags or "").split(",") if t.strip()] if args.tags else []
 
+    db_rows = store.fetch_articles(limit=args.max_articles)
+    if not db_rows:
+        raise RuntimeError("No articles found in PostgreSQL table 'articles'. Run normalization/upsert first.")
+
+    raw_articles = [core.Article.from_dict(r) for r in db_rows]
+    articles = core.dedup_articles(raw_articles)
+    print(f"Loaded from PostgreSQL: {len(raw_articles)} | After dedup: {len(articles)}")
+
     qindex = core.DenseIndexQdrant(url=args.qdrant_url, collection=args.collection)
     collection_exists = qindex.collection_exists()
     points_count = qindex.get_points_count() if collection_exists else 0
     need_index = bool(args.reindex or args.resume_index or points_count == 0)
-
-    need_article_corpus = bool(need_index or not args.dense_only)
-    articles: List[Any] = []
-    id_to_article: Dict[str, Any] = {}
-    bm25 = None
-
-    if need_article_corpus:
-        articles, raw_count, articles_from_cache = _load_postgres_articles_cached(store, args.max_articles)
-        if not articles:
-            raise RuntimeError("No articles found in PostgreSQL table 'articles'. Run normalization/upsert first.")
-        cache_msg = " | cache=articles" if articles_from_cache else ""
-        print(f"Loaded from PostgreSQL: {raw_count} | After dedup: {len(articles)}{cache_msg}")
-        id_to_article = {a.id: a for a in articles}
-    else:
-        print("Dense-only fast path: skipping full PostgreSQL article load and local BM25 rebuild.")
 
     if need_index:
         articles_to_index = articles
@@ -359,16 +310,8 @@ def main() -> int:
     else:
         print(f"Qdrant already has {points_count} points. Skipping re-embedding.")
 
-    if not args.dense_only:
-        bm25, bm25_from_cache = core.load_or_build_bm25(
-            articles,
-            cache_key=f"postgres:{args.db_url}:{args.max_articles if args.max_articles is not None else 'all'}",
-        )
-        if bm25_from_cache:
-            print("Loaded BM25 from cache.")
-        else:
-            print("Built BM25 and saved cache.")
-
+    bm25 = core.BM25Index(articles)
+    id_to_article = {a.id: a for a in articles}
     embedder = core.Embedder("BAAI/bge-m3", use_fp16=True)
 
     interests = [i for i in (args.interest or []) if i and i.strip()]

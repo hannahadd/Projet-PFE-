@@ -2,7 +2,6 @@ import os
 import re
 import json
 import hashlib
-import pickle
 from pathlib import Path
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
@@ -78,49 +77,6 @@ def detect_lang(text: str) -> Optional[str]:
         return None
 
 
-CACHE_VERSION = 1
-
-
-def default_cache_dir() -> Path:
-    path = Path(__file__).resolve().parent / ".cache" / "news_reco"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def load_pickle_cache(path: Path) -> Optional[Dict[str, Any]]:
-    try:
-        with open(path, "rb") as f:
-            payload = pickle.load(f)
-        if isinstance(payload, dict):
-            return payload
-    except Exception:
-        return None
-    return None
-
-
-def save_pickle_cache(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp_path, "wb") as f:
-        pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
-    os.replace(tmp_path, path)
-
-
-def articles_signature(articles: List["Article"]) -> str:
-    h = hashlib.sha1()
-    h.update(f"v{CACHE_VERSION}|n={len(articles)}".encode("utf-8"))
-    for a in articles:
-        h.update(str(a.id).encode("utf-8", errors="ignore"))
-        h.update(b"|")
-        h.update(str(a.fingerprint or "").encode("utf-8", errors="ignore"))
-        h.update(b"\n")
-    return h.hexdigest()
-
-
-def namespace_hash(value: str) -> str:
-    return hashlib.sha1((value or "").encode("utf-8", errors="ignore")).hexdigest()[:16]
-
-
 # ----------------------------
 # Data model
 # ----------------------------
@@ -185,19 +141,6 @@ class Article:
             canonical_text=canonical,
             fingerprint=fp,
         )
-
-    @staticmethod
-    def from_qdrant_payload(payload: Dict[str, Any], article_id: Optional[str] = None) -> "Article":
-        data = dict(payload or {})
-        if article_id:
-            data["id"] = article_id
-        elif data.get("article_id") and not data.get("id"):
-            data["id"] = data.get("article_id")
-        if data.get("text") and not data.get("content"):
-            data["content"] = data.get("text")
-        if data.get("date") and not data.get("published_date"):
-            data["published_date"] = data.get("date")
-        return Article.from_dict(data)
 
 
 # ----------------------------
@@ -473,7 +416,7 @@ class DenseIndexQdrant:
                 limit=limit,
                 query_filter=flt,
                 with_payload=True,
-                with_vectors=False,
+                with_vectors=True,
             )
         if hasattr(self.client, "search_points"):
             return self.client.search_points(
@@ -482,7 +425,7 @@ class DenseIndexQdrant:
                 limit=limit,
                 query_filter=flt,
                 with_payload=True,
-                with_vectors=False,
+                with_vectors=True,
             )
 
         # Newer client API (query_points)
@@ -492,7 +435,7 @@ class DenseIndexQdrant:
             limit=limit,
             query_filter=flt,
             with_payload=True,
-            with_vectors=False,
+            with_vectors=True,
         )
         return list(getattr(resp, "points", []))
 
@@ -581,40 +524,33 @@ def compute_final_scores(
     # user centers (dense)
     centers = [c.vec for c in user.centers] if user.centers else []
 
-    cand_ids = list(candidates.keys())
-    if not cand_ids:
-        return {}
-
-    cand_mat = np.vstack([candidates[aid].embedding for aid in cand_ids]).astype(np.float32, copy=False)
-
-    if centers:
-        center_mat = np.vstack(centers).astype(np.float32, copy=False)
-        sims = cand_mat @ center_mat.T
-        sim_main = sims[:, 0]
-        sim_exp = sims[:, 1:].max(axis=1) if sims.shape[1] > 1 else sim_main
-        sim_vec = 0.7 * sim_main + 0.3 * sim_exp
-    else:
-        sim_vec = np.zeros(len(cand_ids), dtype=np.float32)
-
-    if dense_only:
-        bm25_norm = np.zeros(len(cand_ids), dtype=np.float32)
-    else:
-        bm25_norm = np.asarray(
-            [bm25_scores.get(aid, 0.0) / (max_bm25 + 1e-9) for aid in cand_ids],
-            dtype=np.float32,
-        )
-
-    keep_mask = (sim_vec >= min_sim) | (bm25_norm >= min_bm25)
-
     out = {}
-    for aid, keep, score in zip(cand_ids, keep_mask.tolist(), sim_vec.tolist()):
-        if keep:
-            out[aid] = float(score)
+    for aid, a in candidates.items():
+        assert a.embedding is not None
+        # Dense score requested:
+        # score = 0.7 * sim(article, center_main) + 0.3 * max(sim(article, expansions))
+        if centers:
+            sim_main = cosine(a.embedding, centers[0])
+            if len(centers) > 1:
+                sim_exp = max(cosine(a.embedding, uc) for uc in centers[1:])
+            else:
+                sim_exp = sim_main
+            sim_vec = 0.7 * sim_main + 0.3 * sim_exp
+        else:
+            sim_vec = 0.0
+
+        bm25_norm = 0.0 if dense_only else (bm25_scores.get(aid, 0.0) / (max_bm25 + 1e-9))
+
+        if sim_vec < min_sim and bm25_norm < min_bm25:
+            continue
+
+        score = sim_vec
+        out[aid] = float(score)
     return out
 
 def retrieve_feed(
     qdrant_index: DenseIndexQdrant,
-    bm25_index: Optional[BM25Index],
+    bm25_index: BM25Index,
     id_to_article: Dict[str, Article],
     user: UserProfile,
     dense_per_center: int = 250,
@@ -638,19 +574,17 @@ def retrieve_feed(
         hits = qdrant_index.search(c.vec, limit=dense_per_center, days=days)
         for h in hits:
             aid = str(h.id)
-            a = id_to_article.get(aid)
-            if a is None:
-                payload = getattr(h, "payload", None) or {}
-                if payload:
-                    a = Article.from_qdrant_payload(payload, article_id=aid)
-                    id_to_article[aid] = a
-            if a is not None:
+            if aid in id_to_article:
+                # ensure we carry vector from Qdrant if needed
+                a = id_to_article[aid]
+                if a.embedding is None and h.vector is not None:
+                    a.embedding = np.asarray(h.vector, dtype=np.float32)
                 candidates[aid] = a
 
     # BM25 candidates
     qtext = user.query_text()
     bm25_scores: Dict[str, float] = {}
-    if not dense_only and bm25_index is not None:
+    if not dense_only:
         bm25_top = bm25_index.topk(qtext, k=bm25_k)
         bm25_scores = {aid: s for aid, s in bm25_top}
         for aid, _ in bm25_top:
@@ -744,61 +678,6 @@ def load_articles(path: str, limit: Optional[int] = None) -> List[Article]:
                     break
     return articles
 
-
-def load_articles_cached(path: str, limit: Optional[int] = None, cache_dir: Optional[Path] = None) -> Tuple[List[Article], bool]:
-    cache_dir = cache_dir or default_cache_dir()
-    src = Path(path)
-    try:
-        stat = src.stat()
-    except FileNotFoundError:
-        return load_articles(path, limit=limit), False
-
-    signature = "|".join(
-        [
-            f"v={CACHE_VERSION}",
-            f"path={src.resolve()}",
-            f"mtime_ns={stat.st_mtime_ns}",
-            f"size={stat.st_size}",
-            f"limit={limit if limit is not None else 'all'}",
-        ]
-    )
-    cache_path = cache_dir / f"articles_file_{namespace_hash(str(src.resolve()))}_{limit if limit is not None else 'all'}.pkl"
-    cached = load_pickle_cache(cache_path)
-    if cached and cached.get("signature") == signature and isinstance(cached.get("articles"), list):
-        return cached["articles"], True
-
-    articles = load_articles(path, limit=limit)
-    save_pickle_cache(
-        cache_path,
-        {
-            "signature": signature,
-            "articles": articles,
-        },
-    )
-    return articles, False
-
-
-def load_or_build_bm25(articles: List[Article], cache_key: str, cache_dir: Optional[Path] = None) -> Tuple[BM25Index, bool]:
-    cache_dir = cache_dir or default_cache_dir()
-    signature = articles_signature(articles)
-    cache_path = cache_dir / f"bm25_{namespace_hash(cache_key)}_{signature}.pkl"
-    cached = load_pickle_cache(cache_path)
-    if cached and cached.get("signature") == signature and isinstance(cached.get("bm25"), BM25Index):
-        bm25 = cached["bm25"]
-        bm25.articles = articles
-        bm25.id_to_pos = {a.id: i for i, a in enumerate(articles)}
-        return bm25, True
-
-    bm25 = BM25Index(articles)
-    save_pickle_cache(
-        cache_path,
-        {
-            "signature": signature,
-            "bm25": bm25,
-        },
-    )
-    return bm25, False
-
 def dedup_articles(articles: List[Article]) -> List[Article]:
     seen_fp = set()
     out = []
@@ -829,9 +708,9 @@ def main(
     out_path: Optional[str] = None,
 ):
     # 1) Load + dedup
-    raw, raw_from_cache = load_articles_cached(data_path, limit=max_articles)
+    raw = load_articles(data_path, limit=max_articles)
     articles = dedup_articles(raw)
-    print(f"Loaded: {len(raw)} | After dedup: {len(articles)}{' | cache=articles' if raw_from_cache else ''}")
+    print(f"Loaded: {len(raw)} | After dedup: {len(articles)}")
 
     # 2) Init Qdrant + optional reindex
     qindex = DenseIndexQdrant(url=qdrant_url, collection=collection)
@@ -881,14 +760,7 @@ def main(
         print(f"Qdrant already has {points_count} points. Skipping re-embedding.")
 
     # 5) BM25 index (local)
-    bm25 = None
-    if not dense_only:
-        bm25, bm25_from_cache = load_or_build_bm25(
-            articles,
-            cache_key=f"file:{Path(data_path).resolve()}:{max_articles if max_articles is not None else 'all'}",
-        )
-        if bm25_from_cache:
-            print("Loaded BM25 from cache.")
+    bm25 = BM25Index(articles)
 
     # 6) Local map
     id_to_article = {a.id: a for a in articles}
