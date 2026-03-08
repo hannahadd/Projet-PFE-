@@ -1,0 +1,20 @@
+{
+  "interest": "Finance",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-07T23:01:03.909161+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "stock market crash",
+    "inflation rate rise",
+    "personal debt relief",
+    "cryptocurrency trading",
+    "federal interest rates",
+    "corporate earnings report",
+    "banking sector crisis",
+    "retail investor trends",
+    "housing mortgage rates",
+    "tax audit penalties"
+  ],
+  "raw_output": "stock market crash\ninflation rate rise\npersonal debt relief\ncryptocurrency trading\nfederal interest rates\ncorporate earnings report\nbanking sector crisis\nretail investor trends\nhousing mortgage rates\ntax audit penalties"
+}
