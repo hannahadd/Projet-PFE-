@@ -1,20 +1,20 @@
 {
   "interest": "SpaceX",
   "model": "qwen3.5:9b-q4_K_M",
-  "generated_at": "2026-03-06T23:52:27.244979+00:00",
+  "generated_at": "2026-03-08T20:17:24.919334+00:00",
   "status": "ok",
   "n_items": 10,
   "items": [
-    "SpaceX Falcon Heavy",
-    "Starship orbital test",
-    "Crew Dragon docking",
-    "Starlink internet network",
-    "Mars colonization goal",
-    "Reusable rocket boosters",
-    "NASA human missions",
-    "Blue Origin rivalry",
-    "BFR design evolution",
-    "Elon Musk CEO"
+    "Starship",
+    "Raptor",
+    "Dragon",
+    "Blastoff",
+    "Launchpad",
+    "Orbital",
+    "Payload",
+    "Superheavy",
+    "Falcon9",
+    "Starlink"
   ],
-  "raw_output": "SpaceX Falcon Heavy\nStarship orbital test\nCrew Dragon docking\nStarlink internet network\nMars colonization goal\nReusable rocket boosters\nNASA human missions\nBlue Origin rivalry\nBFR design evolution\nElon Musk CEO"
+  "raw_output": "Starship\nRaptor\nDragon\nBlastoff\nLaunchpad\nOrbital\nPayload\nSuperheavy\nFalcon9\nStarlink"
 }

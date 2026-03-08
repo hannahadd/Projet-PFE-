@@ -1,0 +1,291 @@
+{
+  "total_expected": 10,
+  "total_found_correct": 9,
+  "total_score": "9/10",
+  "total_ratio": 0.9,
+  "global_rank_score_avg": 0.26666666666666666,
+  "by_interest": [
+    {
+      "interest": "AI and LLMs",
+      "score": "1/2",
+      "ratio": 0.5,
+      "rank_score_avg": 0.7,
+      "articles": [
+        {
+          "article_id": "97482f14-c881-c079-0630-4f125bd3db6f",
+          "title": "Qwen3.5 launches as Alibaba bets on more efficient multimodal agents",
+          "expected_interests": [
+            "AI and LLMs"
+          ],
+          "found": false,
+          "found_interest": null,
+          "found_rank": null,
+          "ok": false,
+          "rank_points": 0.0
+        },
+        {
+          "article_id": "180767ef-ebac-bb3e-dd71-0a0458f4f1e3",
+          "title": "New benchmark claims to measure 'agent reliability' across long-context LLM workflows",
+          "expected_interests": [
+            "AI and LLMs"
+          ],
+          "found": true,
+          "found_interest": "AI and LLMs",
+          "found_rank": 8,
+          "ok": true,
+          "rank_points": 0.7
+        }
+      ]
+    },
+    {
+      "interest": "Apple",
+      "score": "2/2",
+      "ratio": 1.0,
+      "rank_score_avg": 0.1,
+      "articles": [
+        {
+          "article_id": "7fdcd400-dfa4-e9bf-240b-c10fa80b3d38",
+          "title": "Apple unveils the MacBook Neo, a $599 laptop powered by the A18 Pro chip",
+          "expected_interests": [
+            "Apple"
+          ],
+          "found": true,
+          "found_interest": "Apple",
+          "found_rank": 222,
+          "ok": true,
+          "rank_points": 0.1
+        },
+        {
+          "article_id": "d9095dac-36c2-d3e3-36c2-a5c5985ada2d",
+          "title": "Apple to roll out 'Privacy Receipts' feature to show what apps accessed and why",
+          "expected_interests": [
+            "Apple"
+          ],
+          "found": true,
+          "found_interest": "Apple",
+          "found_rank": 480,
+          "ok": true,
+          "rank_points": 0.1
+        }
+      ]
+    },
+    {
+      "interest": "french politics",
+      "score": "2/2",
+      "ratio": 1.0,
+      "rank_score_avg": 0.39999999999999997,
+      "articles": [
+        {
+          "article_id": "d97085a6-12bc-f668-a473-173f63b488c2",
+          "title": "Macron annonce l’envoi du porte-avions Charles de Gaulle en Méditerranée sur fond de crise au Moyen-Orient",
+          "expected_interests": [
+            "french politics"
+          ],
+          "found": true,
+          "found_interest": "french politics",
+          "found_rank": 374,
+          "ok": true,
+          "rank_points": 0.1
+        },
+        {
+          "article_id": "18b72c49-340a-c03e-a13f-f5c1ef182b12",
+          "title": "French parties clash over referendum proposal as budget talks tighten in Paris",
+          "expected_interests": [
+            "french politics"
+          ],
+          "found": true,
+          "found_interest": "french politics",
+          "found_rank": 6,
+          "ok": true,
+          "rank_points": 0.7
+        }
+      ]
+    },
+    {
+      "interest": "SpaceX",
+      "score": "2/2",
+      "ratio": 1.0,
+      "rank_score_avg": 0.25,
+      "articles": [
+        {
+          "article_id": "a84b60a3-2ce7-202d-1370-c9152fe15ca4",
+          "title": "Starship: Flight 12 draws closer as Ship 39 enters cryogenic testing and Booster 19 moves forward",
+          "expected_interests": [
+            "SpaceX"
+          ],
+          "found": true,
+          "found_interest": "SpaceX",
+          "found_rank": 35,
+          "ok": true,
+          "rank_points": 0.1
+        },
+        {
+          "article_id": "b8592e5f-2796-1057-c594-7e471cf154c9",
+          "title": "SpaceX pitches rapid-response Starlink terminals for emergency services in remote Europe",
+          "expected_interests": [
+            "SpaceX"
+          ],
+          "found": true,
+          "found_interest": "SpaceX",
+          "found_rank": 15,
+          "ok": true,
+          "rank_points": 0.4
+        }
+      ]
+    },
+    {
+      "interest": "war and international conflict",
+      "score": "2/2",
+      "ratio": 1.0,
+      "rank_score_avg": 0.1,
+      "articles": [
+        {
+          "article_id": "4e4ebd55-08fb-340d-785d-b0213664f77f",
+          "title": "Iran: Death of Ayatollah Khamenei in Israeli-American strikes raises fears of retaliation",
+          "expected_interests": [
+            "war and international conflict"
+          ],
+          "found": true,
+          "found_interest": "war and international conflict",
+          "found_rank": 1230,
+          "ok": true,
+          "rank_points": 0.1
+        },
+        {
+          "article_id": "07266503-4d7a-855a-9158-0e53a3c63eda",
+          "title": "Sudan talks wobble as rival factions dispute control of a proposed humanitarian corridor",
+          "expected_interests": [
+            "war and international conflict"
+          ],
+          "found": true,
+          "found_interest": "war and international conflict",
+          "found_rank": 133,
+          "ok": true,
+          "rank_points": 0.1
+        }
+      ]
+    }
+  ],
+  "details": [
+    {
+      "article_id": "97482f14-c881-c079-0630-4f125bd3db6f",
+      "title": "Qwen3.5 launches as Alibaba bets on more efficient multimodal agents",
+      "expected_interests": [
+        "AI and LLMs"
+      ],
+      "found": false,
+      "found_interest": null,
+      "found_rank": null,
+      "ok": false,
+      "rank_points": 0.0
+    },
+    {
+      "article_id": "a84b60a3-2ce7-202d-1370-c9152fe15ca4",
+      "title": "Starship: Flight 12 draws closer as Ship 39 enters cryogenic testing and Booster 19 moves forward",
+      "expected_interests": [
+        "SpaceX"
+      ],
+      "found": true,
+      "found_interest": "SpaceX",
+      "found_rank": 35,
+      "ok": true,
+      "rank_points": 0.1
+    },
+    {
+      "article_id": "4e4ebd55-08fb-340d-785d-b0213664f77f",
+      "title": "Iran: Death of Ayatollah Khamenei in Israeli-American strikes raises fears of retaliation",
+      "expected_interests": [
+        "war and international conflict"
+      ],
+      "found": true,
+      "found_interest": "war and international conflict",
+      "found_rank": 1230,
+      "ok": true,
+      "rank_points": 0.1
+    },
+    {
+      "article_id": "7fdcd400-dfa4-e9bf-240b-c10fa80b3d38",
+      "title": "Apple unveils the MacBook Neo, a $599 laptop powered by the A18 Pro chip",
+      "expected_interests": [
+        "Apple"
+      ],
+      "found": true,
+      "found_interest": "Apple",
+      "found_rank": 222,
+      "ok": true,
+      "rank_points": 0.1
+    },
+    {
+      "article_id": "d97085a6-12bc-f668-a473-173f63b488c2",
+      "title": "Macron annonce l’envoi du porte-avions Charles de Gaulle en Méditerranée sur fond de crise au Moyen-Orient",
+      "expected_interests": [
+        "french politics"
+      ],
+      "found": true,
+      "found_interest": "french politics",
+      "found_rank": 374,
+      "ok": true,
+      "rank_points": 0.1
+    },
+    {
+      "article_id": "07266503-4d7a-855a-9158-0e53a3c63eda",
+      "title": "Sudan talks wobble as rival factions dispute control of a proposed humanitarian corridor",
+      "expected_interests": [
+        "war and international conflict"
+      ],
+      "found": true,
+      "found_interest": "war and international conflict",
+      "found_rank": 133,
+      "ok": true,
+      "rank_points": 0.1
+    },
+    {
+      "article_id": "180767ef-ebac-bb3e-dd71-0a0458f4f1e3",
+      "title": "New benchmark claims to measure 'agent reliability' across long-context LLM workflows",
+      "expected_interests": [
+        "AI and LLMs"
+      ],
+      "found": true,
+      "found_interest": "AI and LLMs",
+      "found_rank": 8,
+      "ok": true,
+      "rank_points": 0.7
+    },
+    {
+      "article_id": "18b72c49-340a-c03e-a13f-f5c1ef182b12",
+      "title": "French parties clash over referendum proposal as budget talks tighten in Paris",
+      "expected_interests": [
+        "french politics"
+      ],
+      "found": true,
+      "found_interest": "french politics",
+      "found_rank": 6,
+      "ok": true,
+      "rank_points": 0.7
+    },
+    {
+      "article_id": "b8592e5f-2796-1057-c594-7e471cf154c9",
+      "title": "SpaceX pitches rapid-response Starlink terminals for emergency services in remote Europe",
+      "expected_interests": [
+        "SpaceX"
+      ],
+      "found": true,
+      "found_interest": "SpaceX",
+      "found_rank": 15,
+      "ok": true,
+      "rank_points": 0.4
+    },
+    {
+      "article_id": "d9095dac-36c2-d3e3-36c2-a5c5985ada2d",
+      "title": "Apple to roll out 'Privacy Receipts' feature to show what apps accessed and why",
+      "expected_interests": [
+        "Apple"
+      ],
+      "found": true,
+      "found_interest": "Apple",
+      "found_rank": 480,
+      "ok": true,
+      "rank_points": 0.1
+    }
+  ]
+}

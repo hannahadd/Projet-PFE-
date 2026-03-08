@@ -1,20 +1,20 @@
 {
   "interest": "AI and LLMs",
   "model": "qwen3.5:9b-q4_K_M",
-  "generated_at": "2026-03-06T23:52:32.466947+00:00",
+  "generated_at": "2026-03-08T20:17:26.774921+00:00",
   "status": "ok",
   "n_items": 10,
   "items": [
-    "AI-generated content",
-    "Large language models",
-    "Neural network weights",
-    "Prompt engineering ethics",
-    "LLM hallucinations",
-    "Transformer architecture",
-    "Model fine-tuning",
-    "AI bias detection",
-    "Natural language processing",
-    "Deepfake generation"
+    "AGI",
+    "LLM Ops",
+    "RAG",
+    "Hallucination Mitigation",
+    "Agent Swarm",
+    "MoE Architecture",
+    "Vector Database",
+    "Synthetic Data",
+    "Model Distillation",
+    "RLHF Optimization"
   ],
-  "raw_output": "AI-generated content\nLarge language models\nNeural network weights\nPrompt engineering ethics\nLLM hallucinations\nTransformer architecture\nModel fine-tuning\nAI bias detection\nNatural language processing\nDeepfake generation"
+  "raw_output": "AGI\nLLM Ops\nRAG\nHallucination Mitigation\nAgent Swarm\nMoE Architecture\nVector Database\nSynthetic Data\nModel Distillation\nRLHF Optimization"
 }

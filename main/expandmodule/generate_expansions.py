@@ -10,44 +10,24 @@ from pathlib import Path
 from typing import List, Sequence
 
 
-PROMPT_TEMPLATE = """Generate exactly {count} keywords or short press-style expressions from the following topic:
+PROMPT_TEMPLATE = """Give me exactly {count} 2025 trending words directly linked with "{topic}".
 
-TOPIC: {topic}
+Strict rules:
+- exactly {count} items
+- exactly {min_words} words per item
+- one item per line
+- no numbering
+- no bullets
+- no explanation
+- no intro
+- no outro
+- no full sentence
+- no countries
+- no nationalities
+- each item must be directly usable to search news articles about this topic
+- each item must be specific, concrete, and low-ambiguity
 
-Goal:
-obtain expressions that can be used directly to search for articles on this topic, with minimal ambiguity.
-
-Strict constraints:
-
-* exactly {count} items
-* {min_words} or {max_words} words per item
-* one item per line
-* no explanation
-* no table
-* no categories
-* no full sentences
-* each item must be specific to the topic
-* each item must be understandable on its own
-* each item must contain a lexical clue concrete enough to clearly evoke the topic
-* each item must look like an expression that could realistically appear in the press
-
-Prohibitions:
-
-* formulations that could apply to many different topics
-* abstract, institutional, or overly vague expressions
-* expressions likely to bring back many off-topic articles
-
-
-Mandatory self-check before answering:
-for each item, apply this test:
-
-1. when read alone, does it clearly evoke the topic?
-2. would it be too ambiguous in a press search?
-3. could it be reused for many other topics?
-4. does it contain a named entity not present in the topic?
-   If yes to 2, 3, or 4, replace it.
-
-Reply only with the {count} final items."""
+Reply only with the {count} items, one per line."""
 
 
 def slugify(value: str, max_len: int = 120) -> str:
@@ -218,9 +198,11 @@ def generate_items_for_topic(
             return items, raw
 
         repair_prompt = (
-            f"Your previous output did not satisfy constraints.\n"
-            f"Need exactly {count} lines, each {min_words}-{max_words} words, no numbering, no explanations.\n"
-            f"Topic: {topic}\n"
+            f"Rewrite your previous answer.\n"
+            f"Need exactly {count} items about \"{topic}\".\n"
+            f"Each item must be {min_words} to {max_words} words.\n"
+            f"One item per line.\n"
+            f"No numbering. No bullets. No explanation. No countries.\n\n"
             f"Previous output:\n{raw}\n\n"
             f"Return only the corrected {count} items, one per line."
         )

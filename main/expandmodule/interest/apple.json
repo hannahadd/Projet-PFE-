@@ -1,20 +1,20 @@
 {
   "interest": "Apple",
   "model": "qwen3.5:9b-q4_K_M",
-  "generated_at": "2026-03-06T23:52:30.254219+00:00",
+  "generated_at": "2026-03-08T20:17:26.160766+00:00",
   "status": "ok",
   "n_items": 10,
   "items": [
-    "New Apple iPhone",
-    "Stock price news",
-    "Tim Cook CEO",
-    "Pro camera test",
-    "Watch fitness tracking",
-    "MacBook Pro specs",
-    "Store opening hours",
-    "Event announcement",
-    "Services subscription",
-    "Lawsuit Google"
+    "iPhone",
+    "iPad",
+    "Mac",
+    "Watch",
+    "TV",
+    "AirPods",
+    "Silicon",
+    "Cupertino",
+    "Store",
+    "MagSafe"
   ],
-  "raw_output": "New Apple iPhone\nStock price news\nTim Cook CEO\nPro camera test\nWatch fitness tracking\nMacBook Pro specs\nStore opening hours\nEvent announcement\nServices subscription\nLawsuit Google"
+  "raw_output": "iPhone\niPad\nMac\nWatch\nTV\nAirPods\nSilicon\nCupertino\nStore\nMagSafe"
 }
