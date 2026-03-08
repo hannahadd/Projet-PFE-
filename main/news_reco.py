@@ -242,6 +242,7 @@ def main() -> int:
     parser.add_argument("--interest", action="append", default=None)
     parser.add_argument("--tags", default=None)
     parser.add_argument("--reindex", action="store_true")
+    parser.add_argument("--resume-index", action="store_true")
     parser.add_argument("--lang", default=None)
     parser.add_argument("--days", type=int, default=100)
     parser.add_argument("--min-sim", type=float, default=0.15)
@@ -254,6 +255,9 @@ def main() -> int:
     parser.add_argument("--mmr-lambda", type=float, default=0.82)
     parser.add_argument("--mmr-near-dup-threshold", type=float, default=0.92)
     args = parser.parse_args()
+
+    if args.reindex and args.resume_index:
+        parser.error("--reindex and --resume-index are mutually exclusive")
 
     global INTEREST_EXPANSIONS
     INTEREST_EXPANSIONS = load_interest_expansions(args.expansions_dir)
@@ -272,27 +276,37 @@ def main() -> int:
     print(f"Loaded from PostgreSQL: {len(raw_articles)} | After dedup: {len(articles)}")
 
     qindex = core.DenseIndexQdrant(url=args.qdrant_url, collection=args.collection)
-    points_count = qindex.get_points_count() if qindex.collection_exists() else 0
-    need_index = bool(args.reindex or points_count == 0)
+    collection_exists = qindex.collection_exists()
+    points_count = qindex.get_points_count() if collection_exists else 0
+    need_index = bool(args.reindex or args.resume_index or points_count == 0)
 
     if need_index:
-        embedder = core.Embedder("BAAI/bge-m3", use_fp16=True)
-        texts = [a.canonical_text for a in articles]
-        all_vecs = []
-        bs = 32
-        for i in tqdm(range(0, len(texts), bs), desc="Embedding"):
-            vecs = embedder.encode(texts[i : i + bs], batch_size=bs)
-            all_vecs.append(vecs)
-        all_vecs = np.vstack(all_vecs)
-        for a, v in zip(articles, all_vecs):
-            a.embedding = v
-        dim = int(all_vecs.shape[1])
-        if args.reindex:
-            qindex.recreate(vector_dim=dim)
+        articles_to_index = articles
+        if args.resume_index and not args.reindex and collection_exists:
+            existing_ids = qindex.get_existing_ids()
+            articles_to_index = [a for a in articles if a.id not in existing_ids]
+            print(f"Qdrant resume mode: existing={len(existing_ids)} | missing={len(articles_to_index)}")
+
+        if articles_to_index:
+            embedder = core.Embedder("BAAI/bge-m3", use_fp16=True)
+            texts = [a.canonical_text for a in articles_to_index]
+            all_vecs = []
+            bs = 32
+            for i in tqdm(range(0, len(texts), bs), desc="Embedding"):
+                vecs = embedder.encode(texts[i : i + bs], batch_size=bs)
+                all_vecs.append(vecs)
+            all_vecs = np.vstack(all_vecs)
+            for a, v in zip(articles_to_index, all_vecs):
+                a.embedding = v
+            dim = int(all_vecs.shape[1])
+            if args.reindex:
+                qindex.recreate(vector_dim=dim)
+            else:
+                qindex.ensure_collection(vector_dim=dim)
+            qindex.upsert_articles(articles_to_index, batch_size=256)
+            print(f"Qdrant upsert done. Indexed {len(articles_to_index)} articles.")
         else:
-            qindex.ensure_collection(vector_dim=dim)
-        qindex.upsert_articles(articles, batch_size=256)
-        print("Qdrant upsert done.")
+            print(f"Qdrant already contains all {len(articles)} deduplicated articles. Skipping re-embedding.")
     else:
         print(f"Qdrant already has {points_count} points. Skipping re-embedding.")
 

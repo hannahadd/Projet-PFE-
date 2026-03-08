@@ -282,6 +282,39 @@ class DenseIndexQdrant:
         except Exception:
             return 0
 
+    def get_existing_ids(self, batch_size: int = 2048) -> Set[str]:
+        ids: Set[str] = set()
+        offset = None
+
+        while True:
+            resp = self.client.scroll(
+                collection_name=self.collection,
+                limit=batch_size,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+
+            if isinstance(resp, tuple):
+                records, next_offset = resp
+            else:
+                records = list(getattr(resp, "points", []) or [])
+                next_offset = getattr(resp, "next_page_offset", None)
+
+            if not records:
+                break
+
+            for r in records:
+                rid = getattr(r, "id", None)
+                if rid is not None:
+                    ids.add(str(rid))
+
+            if next_offset is None:
+                break
+            offset = next_offset
+
+        return ids
+
     def _build_date_filter(self, days: int) -> Optional[qm.Filter]:
         if not days or days <= 0:
             return None
@@ -663,6 +696,7 @@ def main(
     user_interests: Optional[List[str]] = None,
     user_tags: Optional[List[str]] = None,
     reindex: bool = False,
+    resume_index: bool = False,
     lang: Optional[str] = None,
     days: int = 100,
     tau_hours: float = 336.0,
@@ -680,36 +714,48 @@ def main(
 
     # 2) Init Qdrant + optional reindex
     qindex = DenseIndexQdrant(url=qdrant_url, collection=collection)
-    points_count = qindex.get_points_count() if qindex.collection_exists() else 0
+    collection_exists = qindex.collection_exists()
+    points_count = qindex.get_points_count() if collection_exists else 0
 
-    need_index = reindex or (points_count == 0)
+    need_index = reindex or resume_index or (points_count == 0)
 
     if need_index:
-        # 3) Embed canonical_text
-        embedder = Embedder("BAAI/bge-m3", use_fp16=True)
-        texts = [a.canonical_text for a in articles]
+        articles_to_index = articles
+        if resume_index and not reindex and collection_exists:
+            existing_ids = qindex.get_existing_ids()
+            articles_to_index = [a for a in articles if a.id not in existing_ids]
+            print(
+                f"Qdrant resume mode: existing={len(existing_ids)} | missing={len(articles_to_index)}"
+            )
 
-        all_vecs = []
-        bs = 32
-        for i in tqdm(range(0, len(texts), bs), desc="Embedding"):
-            chunk = texts[i:i+bs]
-            vecs = embedder.encode(chunk, batch_size=bs)
-            all_vecs.append(vecs)
-        all_vecs = np.vstack(all_vecs)
-
-        for a, v in zip(articles, all_vecs):
-            a.embedding = v
-
-        dim = int(all_vecs.shape[1])
-        print("Embedding dim:", dim)
-
-        # 4) Index in Qdrant
-        if reindex:
-            qindex.recreate(vector_dim=dim)
+        if not articles_to_index:
+            print(f"Qdrant already contains all {len(articles)} deduplicated articles. Skipping re-embedding.")
         else:
-            qindex.ensure_collection(vector_dim=dim)
-        qindex.upsert_articles(articles, batch_size=256)
-        print("Qdrant upsert done.")
+        # 3) Embed canonical_text
+            embedder = Embedder("BAAI/bge-m3", use_fp16=True)
+            texts = [a.canonical_text for a in articles_to_index]
+
+            all_vecs = []
+            bs = 32
+            for i in tqdm(range(0, len(texts), bs), desc="Embedding"):
+                chunk = texts[i:i+bs]
+                vecs = embedder.encode(chunk, batch_size=bs)
+                all_vecs.append(vecs)
+            all_vecs = np.vstack(all_vecs)
+
+            for a, v in zip(articles_to_index, all_vecs):
+                a.embedding = v
+
+            dim = int(all_vecs.shape[1])
+            print("Embedding dim:", dim)
+
+            # 4) Index in Qdrant
+            if reindex:
+                qindex.recreate(vector_dim=dim)
+            else:
+                qindex.ensure_collection(vector_dim=dim)
+            qindex.upsert_articles(articles_to_index, batch_size=256)
+            print(f"Qdrant upsert done. Indexed {len(articles_to_index)} articles.")
     else:
         print(f"Qdrant already has {points_count} points. Skipping re-embedding.")
 

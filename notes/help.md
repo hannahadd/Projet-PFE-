@@ -148,6 +148,9 @@ ollama pull qwen3.5:9b-q4_K_M
 python main/ingestiontable/Normalisation_dataset.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news
 
+python main/ingestiontable/Normalisation_dataset.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --in ccnews_warc_by_day/20260211json   --in main/ingestiontable/dataset_top20.csv --chunk-size 1000 --batch-size 1000
+
+
 # 6) Retrieval -> PostgreSQL (récupère retrieval_run_id affiché)
 python main/news_reco.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
@@ -156,6 +159,8 @@ python main/news_reco.py \
 python main/news_reco.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --dense-only --reindex --topk 200
+
+python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --dense-only --resume-index --topk 200
 
 # 7) Rerank -> PostgreSQL (remplacer XXX par retrieval_run_id)
 python main/reranker.py \
@@ -231,6 +236,11 @@ python main/writing.py \
   --eval-file main/ingestiontable/evalarticles/evalarticles.json \
   --upsert-articles \
   --out main/ingestiontable/evalarticles/report_rerank_run1.json
+
+# juste upsert article test
+
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --eval-file main/ingestiontable/evalarticles/evalarticles.json   --upsert-articles 
+Upserted eval articles into articles table: 10
 
 
 
