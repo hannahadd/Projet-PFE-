@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 import pandas as pd
 
@@ -21,14 +22,63 @@ def resolve_input_path(filename: str) -> Path:
     candidates = [
         Path(filename),
         Path(__file__).resolve().parent / filename,
+        ROOT_DIR / "main" / "ingestiontable" / filename,
         ROOT_DIR / "ingestion" / filename,
         ROOT_DIR / "ingestionTest" / filename,
+        ROOT_DIR / "ccnews_warc_by_day" / filename,
         ROOT_DIR / filename,
     ]
     for p in candidates:
         if p.exists():
             return p
     raise FileNotFoundError(f"Could not find {filename}. Tried: {[str(p) for p in candidates]}")
+
+
+def expand_input_paths(input_spec: str) -> List[Path]:
+    path = resolve_input_path(input_spec)
+    if path.is_dir():
+        files: List[Path] = []
+        for pattern in ("*.csv", "*.jsonl", "*.json"):
+            files.extend(sorted(p for p in path.glob(pattern) if p.is_file()))
+        if not files:
+            raise FileNotFoundError(f"No supported input files found in directory: {path}")
+        return files
+    return [path]
+
+
+def iter_input_dataframes(path: Path, chunk_size: int) -> Iterator[pd.DataFrame]:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        yield from pd.read_csv(path, chunksize=chunk_size)
+        return
+
+    if suffix == ".jsonl":
+        rows: List[Dict[str, Any]] = []
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                rows.append(json.loads(line))
+                if len(rows) >= chunk_size:
+                    yield pd.DataFrame(rows)
+                    rows = []
+        if rows:
+            yield pd.DataFrame(rows)
+        return
+
+    if suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            for start in range(0, len(payload), chunk_size):
+                yield pd.DataFrame(payload[start : start + chunk_size])
+            return
+        if isinstance(payload, dict):
+            yield pd.DataFrame([payload])
+            return
+        raise ValueError(f"Unsupported JSON structure for {path}. Expected an object or a list of objects.")
+
+    raise ValueError(f"Unsupported input format for {path}. Expected .csv, .jsonl or .json")
 
 
 def stable_article_id(url: str, title: str, content: str) -> str:
@@ -136,42 +186,125 @@ def to_records(merged_df: pd.DataFrame) -> List[Dict[str, Any]]:
     return records
 
 
+class JsonArrayWriter:
+    def __init__(self, out_path: Path):
+        self.out_path = out_path
+        self.out_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.out_path.open("w", encoding="utf-8")
+        self._fh.write("[\n")
+        self._first = True
+
+    def write_records(self, records: List[Dict[str, Any]]) -> None:
+        for rec in records:
+            if not self._first:
+                self._fh.write(",\n")
+            self._fh.write(json.dumps(rec, ensure_ascii=False, indent=2))
+            self._first = False
+
+    def close(self) -> None:
+        self._fh.write("\n]\n")
+        self._fh.close()
+
+
+def flush_batch(
+    batch: List[Dict[str, Any]],
+    store: Optional[PostgresStore],
+    writer: Optional[JsonArrayWriter],
+) -> int:
+    if not batch:
+        return 0
+    if store is not None:
+        store.upsert_articles(batch)
+    if writer is not None:
+        writer.write_records(batch)
+    flushed = len(batch)
+    batch.clear()
+    return flushed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Normalize datasets and upsert into PostgreSQL")
+    parser.add_argument(
+        "--in",
+        dest="inputs",
+        action="append",
+        default=None,
+        help="Input file or directory. Can be repeated, e.g. --in ccnews_warc_by_day/20260211json --in main/ingestiontable/dataset_top20.csv",
+    )
     parser.add_argument("--csv", default="dataset_top20.csv", help="CSV dataset filename/path")
     parser.add_argument("--jsonl", default="ccnews_dataset.jsonl", help="JSONL dataset filename/path")
     parser.add_argument("--db-url", default="postgresql://postgres:postgres@localhost:5432/pfe_news")
+    parser.add_argument("--batch-size", type=int, default=1000, help="Number of normalized articles to upsert/export per batch")
+    parser.add_argument("--chunk-size", type=int, default=1000, help="Number of raw rows to load at a time from each input file")
     parser.add_argument("--no-db", action="store_true", help="Skip PostgreSQL upsert")
     parser.add_argument("--export-json", default=str(ROOT_DIR / "main" / "ingestiontable" / "merged_dataset.normalized.json"))
     args = parser.parse_args()
 
-    csv_path = resolve_input_path(args.csv)
-    jsonl_path = resolve_input_path(args.jsonl)
+    if args.batch_size <= 0:
+        raise ValueError("--batch-size must be > 0")
+    if args.chunk_size <= 0:
+        raise ValueError("--chunk-size must be > 0")
 
-    df_csv = pd.read_csv(csv_path)
-    df_jsonl = pd.read_json(jsonl_path, lines=True, encoding="utf-8")
+    input_specs = args.inputs if args.inputs else [args.csv, args.jsonl]
 
-    csv_norm = normalize_dataframe(df_csv)
-    jsonl_norm = normalize_dataframe(df_jsonl)
+    input_paths: List[Path] = []
+    seen: set[Path] = set()
+    for spec in input_specs:
+        for path in expand_input_paths(spec):
+            resolved = path.resolve()
+            if resolved not in seen:
+                input_paths.append(path)
+                seen.add(resolved)
 
-    merged = pd.concat([csv_norm, jsonl_norm], ignore_index=True)
-    merged = merged.drop_duplicates(subset=["url"], keep="first")
+    if not input_paths:
+        raise ValueError("No input data loaded. Provide at least one supported --in path or use the default inputs.")
 
-    records = to_records(merged)
+    store = None if args.no_db else PostgresStore(args.db_url)
+    if store is not None:
+        store.init_db()
+
+    writer = JsonArrayWriter(Path(args.export_json)) if args.export_json else None
+    batch: List[Dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    seen_ids: set[str] = set()
+    total_records = 0
+    inserted_records = 0
+
+    try:
+        for input_path in input_paths:
+            print(f"Processing input: {input_path}")
+            for df in iter_input_dataframes(input_path, chunk_size=args.chunk_size):
+                normalized = normalize_dataframe(df)
+                for rec in to_records(normalized):
+                    url_key = str(rec.get("url") or "").strip()
+                    if url_key:
+                        if url_key in seen_urls:
+                            continue
+                        seen_urls.add(url_key)
+                    else:
+                        rec_id = str(rec.get("id") or "").strip()
+                        if rec_id in seen_ids:
+                            continue
+                        seen_ids.add(rec_id)
+
+                    batch.append(rec)
+                    total_records += 1
+
+                    if len(batch) >= args.batch_size:
+                        inserted_records += flush_batch(batch, store, writer)
+
+        inserted_records += flush_batch(batch, store, writer)
+    finally:
+        if writer is not None:
+            writer.close()
 
     if args.export_json:
-        out = Path(args.export_json)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(records).to_json(out, orient="records", force_ascii=False, indent=2)
-        print(f"Export JSON: {out}")
+        print(f"Export JSON: {args.export_json}")
 
-    if not args.no_db:
-        store = PostgresStore(args.db_url)
-        store.init_db()
-        n = store.upsert_articles(records)
-        print(f"Upsert PostgreSQL articles: {n}")
+    if store is not None:
+        print(f"Upsert PostgreSQL articles: {inserted_records}")
 
-    print(f"Fusion terminée. Nombre total d'articles: {len(records)}")
+    print(f"Fusion terminée. Nombre total d'articles: {total_records}")
     return 0
 
 
