@@ -517,6 +517,56 @@ class BM25Index:
             idx = idx[np.argsort(-scores[idx])]
         out = [(self.articles[i].id, float(scores[i])) for i in idx if scores[i] > 0]
         return out
+
+
+# ----------------------------
+# Retrieval + scoring + MMR
+# ----------------------------
+def mmr_select(
+    cand_ids: List[str],
+    cand_scores: Dict[str, float],
+    cand_vecs: Dict[str, np.ndarray],
+    top_k: int = 20,
+    lambda_div: float = 0.75,
+    near_dup_threshold: float = 0.92
+) -> List[str]:
+    """
+    Greedy MMR + near-dup removal (cosine threshold).
+    """
+    selected: List[str] = []
+    remaining = list(cand_ids)
+
+    while remaining and len(selected) < top_k:
+        best_id = None
+        best_val = -1e9
+
+        for cid in remaining:
+            base = cand_scores.get(cid, 0.0)
+
+            if not selected:
+                diversity_pen = 0.0
+            else:
+                sims = [cosine(cand_vecs[cid], cand_vecs[sid]) for sid in selected]
+                max_sim = max(sims)
+                if max_sim >= near_dup_threshold:
+                    # treat as near-dup -> strong penalty
+                    diversity_pen = 1.0
+                else:
+                    diversity_pen = max_sim
+
+            val = lambda_div * base - (1.0 - lambda_div) * diversity_pen
+            if val > best_val:
+                best_val = val
+                best_id = cid
+
+        if best_id is None:
+            break
+
+        selected.append(best_id)
+        remaining.remove(best_id)
+
+    return selected
+
 def compute_final_scores(
     candidates: Dict[str, Article],
     user: UserProfile,
@@ -576,6 +626,8 @@ def retrieve_feed(
     min_bm25: float = 0.0,
     dense_only: bool = False,
     scores_out: Optional[Dict[str, float]] = None,
+    mmr_lambda_div: float = 0.78,
+    mmr_near_dup_threshold: float = 0.92,
 ) -> List[Article]:
 
     # 1) Candidate generation
@@ -638,9 +690,21 @@ def retrieve_feed(
         dense_only=dense_only,
     )
 
-    # 4) Sort by score desc and keep top_k
+    # 4) Sort by score desc for MMR seed list
     ordered_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
-    final_ids = ordered_ids[:top_k]
+
+    # vectors for MMR
+    cand_vecs = {aid: candidates[aid].embedding for aid in ordered_ids if candidates[aid].embedding is not None}
+
+    # 5) MMR diversity + near-dup control
+    final_ids = mmr_select(
+        cand_ids=ordered_ids,
+        cand_scores=scores,
+        cand_vecs=cand_vecs,
+        top_k=top_k,
+        lambda_div=mmr_lambda_div,
+        near_dup_threshold=mmr_near_dup_threshold,
+    )
 
     if scores_out is not None:
         scores_out.clear()

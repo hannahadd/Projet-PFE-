@@ -162,6 +162,8 @@ def _build_export_blocks(
     dense_only: bool,
     dense_per_center: int,
     bm25_k: int,
+    mmr_lambda_div: float,
+    mmr_near_dup_threshold: float,
 ) -> List[Dict[str, Any]]:
     blocks: List[Dict[str, Any]] = []
 
@@ -188,6 +190,8 @@ def _build_export_blocks(
             min_bm25=min_bm25,
             dense_only=dense_only,
             scores_out=scores_map,
+            mmr_lambda_div=mmr_lambda_div,
+            mmr_near_dup_threshold=mmr_near_dup_threshold,
         )
         blocks.append(
             {
@@ -235,6 +239,8 @@ def _build_export_blocks(
             min_bm25=min_bm25,
             dense_only=dense_only,
             scores_out=scores_map,
+            mmr_lambda_div=mmr_lambda_div,
+            mmr_near_dup_threshold=mmr_near_dup_threshold,
         )
         blocks.append(
             {
@@ -288,6 +294,8 @@ def main() -> int:
     parser.add_argument("--topk", type=int, default=20)
     parser.add_argument("--dense-per-center", type=int, default=400)
     parser.add_argument("--bm25-k", type=int, default=400)
+    parser.add_argument("--mmr-lambda", type=float, default=0.82)
+    parser.add_argument("--mmr-near-dup-threshold", type=float, default=0.92)
     args = parser.parse_args()
 
     if args.reindex and args.resume_index:
@@ -388,6 +396,8 @@ def main() -> int:
         dense_only=bool(args.dense_only),
         dense_per_center=int(args.dense_per_center),
         bm25_k=int(args.bm25_k),
+        mmr_lambda_div=float(args.mmr_lambda),
+        mmr_near_dup_threshold=float(args.mmr_near_dup_threshold),
     )
 
     run_id = store.create_retrieval_run(
