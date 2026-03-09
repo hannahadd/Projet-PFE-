@@ -107,10 +107,12 @@ def normalize_interest_name(name: str, aliases: Dict[str, List[str]]) -> str:
 def _fetch_hits(store: PostgresStore, table: str, run_id: int) -> List[Dict[str, Any]]:
     if table == "retrieval_hits":
         blocks = store.fetch_retrieval_blocks(run_id)
+    elif table == "dedup_hits":
+        blocks = store.fetch_dedup_blocks(run_id)
     elif table == "rerank_hits":
         blocks = store.fetch_rerank_blocks(run_id)
     else:
-        raise ValueError("table must be retrieval_hits or rerank_hits")
+        raise ValueError("table must be retrieval_hits, dedup_hits or rerank_hits")
 
     rows: List[Dict[str, Any]] = []
     for b in blocks:
@@ -303,7 +305,7 @@ def main() -> int:
     parser.add_argument("--run-id", type=int, required=True, help="retrieval_run_id or rerank_run_id")
     parser.add_argument(
         "--table",
-        choices=["retrieval_hits", "rerank_hits"],
+        choices=["retrieval_hits", "dedup_hits", "rerank_hits"],
         required=True,
         help="Table to evaluate",
     )

@@ -31,7 +31,8 @@ DEFAULT_INSTRUCTION = core.DEFAULT_INSTRUCTION
 def main() -> int:
     parser = argparse.ArgumentParser(description="Rerank retrieval candidates from PostgreSQL")
     parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))
-    parser.add_argument("--retrieval-run-id", type=int, required=True)
+    parser.add_argument("--table", choices=["retrieval_hits", "dedup_hits"], default="retrieval_hits")
+    parser.add_argument("--retrieval-run-id", "--run-id", dest="run_id", type=int, required=True)
     parser.add_argument("--model", default=core.DEFAULT_MODEL)
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--batch-size", type=int, default=1)
@@ -43,9 +44,22 @@ def main() -> int:
     store = PostgresStore(args.db_url)
     store.init_db()
 
-    blocks = store.fetch_retrieval_blocks(args.retrieval_run_id)
+    if args.table == "retrieval_hits":
+        blocks = store.fetch_retrieval_blocks(args.run_id)
+        representative_retrieval_run_id = int(args.run_id)
+        dedup_run_id = None
+    else:
+        blocks = store.fetch_dedup_blocks(args.run_id)
+        dedup_meta = store.fetch_dedup_run(args.run_id)
+        if dedup_meta is None:
+            raise RuntimeError(f"No dedup run found for dedup_run_id={args.run_id}")
+        representative_retrieval_run_id = int(dedup_meta.get("representative_retrieval_run_id") or 0)
+        if representative_retrieval_run_id <= 0:
+            raise RuntimeError(f"Dedup run {args.run_id} has no representative retrieval run id")
+        dedup_run_id = int(args.run_id)
+
     if not blocks:
-        raise RuntimeError(f"No retrieval hits found for retrieval_run_id={args.retrieval_run_id}")
+        raise RuntimeError(f"No hits found for table={args.table} run_id={args.run_id}")
 
     reranker = core.QwenReranker(
         model_name=args.model,
@@ -91,12 +105,15 @@ def main() -> int:
 
     rerank_run_id = store.create_rerank_run(
         {
-            "retrieval_run_id": int(args.retrieval_run_id),
+            "retrieval_run_id": representative_retrieval_run_id,
             "model": args.model,
             "max_length": int(args.max_length),
             "batch_size": int(args.batch_size),
             "topn": int(args.topn),
             "instruction": args.instruction,
+            "source_table": args.table,
+            "source_run_id": int(args.run_id),
+            "dedup_run_id": dedup_run_id,
         }
     )
     n_rows = store.insert_rerank_hits(rerank_run_id, out_blocks)

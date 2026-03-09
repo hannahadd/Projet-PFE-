@@ -55,6 +55,28 @@ CREATE TABLE IF NOT EXISTS retrieval_hits (
 
 CREATE INDEX IF NOT EXISTS idx_retrieval_hits_run_interest ON retrieval_hits (retrieval_run_id, interest);
 
+CREATE TABLE IF NOT EXISTS dedup_runs (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source_table TEXT NOT NULL DEFAULT 'retrieval_hits',
+    representative_retrieval_run_id BIGINT REFERENCES retrieval_runs(id) ON DELETE SET NULL,
+    interests JSONB,
+    source_run_ids JSONB,
+    params JSONB
+);
+
+CREATE TABLE IF NOT EXISTS dedup_hits (
+    dedup_run_id BIGINT NOT NULL REFERENCES dedup_runs(id) ON DELETE CASCADE,
+    interest TEXT NOT NULL,
+    rank INT NOT NULL,
+    article_id TEXT,
+    score DOUBLE PRECISION,
+    payload JSONB NOT NULL,
+    PRIMARY KEY (dedup_run_id, interest, rank)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dedup_hits_run_interest ON dedup_hits (dedup_run_id, interest);
+
 CREATE TABLE IF NOT EXISTS rerank_runs (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -65,6 +87,14 @@ CREATE TABLE IF NOT EXISTS rerank_runs (
     topn INT,
     instruction TEXT
 );
+
+ALTER TABLE rerank_runs ADD COLUMN IF NOT EXISTS source_table TEXT DEFAULT 'retrieval_hits';
+ALTER TABLE rerank_runs ADD COLUMN IF NOT EXISTS source_run_id BIGINT;
+ALTER TABLE rerank_runs ADD COLUMN IF NOT EXISTS dedup_run_id BIGINT REFERENCES dedup_runs(id) ON DELETE SET NULL;
+UPDATE rerank_runs SET source_table = COALESCE(source_table, 'retrieval_hits');
+UPDATE rerank_runs SET source_run_id = COALESCE(source_run_id, retrieval_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_rerank_runs_source ON rerank_runs (source_table, source_run_id);
 
 CREATE TABLE IF NOT EXISTS rerank_hits (
     rerank_run_id BIGINT NOT NULL REFERENCES rerank_runs(id) ON DELETE CASCADE,
@@ -295,10 +325,127 @@ class PostgresStore:
                     )
         return [{"interest": k, "n": len(v), "hits": v} for k, v in grouped.items()]
 
+    def fetch_latest_retrieval_run_ids_by_interest(self, interests: Optional[List[str]] = None) -> Dict[str, int]:
+        sql = """
+        SELECT interest, MAX(retrieval_run_id) AS latest_run_id
+        FROM retrieval_hits
+        """
+        params: tuple[Any, ...] = ()
+        if interests:
+            sql += " WHERE LOWER(interest) = ANY(%s)"
+            params = ([str(x).strip().lower() for x in interests],)
+        sql += " GROUP BY interest ORDER BY interest ASC"
+
+        out: Dict[str, int] = {}
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                for interest, run_id in cur.fetchall():
+                    if interest:
+                        out[str(interest)] = int(run_id)
+        return out
+
+    def create_dedup_run(self, payload: Dict[str, Any]) -> int:
+        sql = """
+        INSERT INTO dedup_runs (
+            source_table, representative_retrieval_run_id, interests, source_run_ids, params
+        ) VALUES (%s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+        RETURNING id;
+        """
+        vals = (
+            payload.get("source_table") or "retrieval_hits",
+            payload.get("representative_retrieval_run_id"),
+            json.dumps(payload.get("interests") or [], ensure_ascii=False),
+            json.dumps(payload.get("source_run_ids") or {}, ensure_ascii=False),
+            json.dumps(payload.get("params") or {}, ensure_ascii=False),
+        )
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, vals)
+                run_id = int(cur.fetchone()[0])
+            conn.commit()
+        return run_id
+
+    def insert_dedup_hits(self, run_id: int, blocks: List[Dict[str, Any]]) -> int:
+        sql = """
+        INSERT INTO dedup_hits (dedup_run_id, interest, rank, article_id, score, payload)
+        VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+        ON CONFLICT (dedup_run_id, interest, rank) DO UPDATE SET
+          article_id = EXCLUDED.article_id,
+          score = EXCLUDED.score,
+          payload = EXCLUDED.payload;
+        """
+        rows = []
+        for b in blocks:
+            interest = str(b.get("interest") or "")
+            for h in b.get("hits") or []:
+                rows.append(
+                    (
+                        int(run_id),
+                        interest,
+                        int(h.get("rank") or 0),
+                        h.get("id") or (h.get("payload") or {}).get("article_id"),
+                        float(h.get("score") or 0.0),
+                        json.dumps(h.get("payload") or {}, ensure_ascii=False),
+                    )
+                )
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(sql, rows)
+            conn.commit()
+        return len(rows)
+
+    def fetch_dedup_blocks(self, dedup_run_id: int) -> List[Dict[str, Any]]:
+        sql = """
+        SELECT interest, rank, article_id, score, payload
+        FROM dedup_hits
+        WHERE dedup_run_id = %s
+        ORDER BY interest ASC, rank ASC;
+        """
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (int(dedup_run_id),))
+                for interest, rank, article_id, score, payload in cur.fetchall():
+                    grouped.setdefault(interest, []).append(
+                        {
+                            "rank": int(rank),
+                            "id": article_id,
+                            "score": float(score or 0.0),
+                            "payload": payload if isinstance(payload, dict) else {},
+                        }
+                    )
+        return [{"interest": k, "n": len(v), "hits": v} for k, v in grouped.items()]
+
+    def fetch_dedup_run(self, dedup_run_id: int) -> Optional[Dict[str, Any]]:
+        sql = """
+        SELECT id, source_table, representative_retrieval_run_id, interests, source_run_ids, params, created_at
+        FROM dedup_runs
+        WHERE id = %s;
+        """
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (int(dedup_run_id),))
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": int(row[0]),
+            "source_table": row[1],
+            "representative_retrieval_run_id": row[2],
+            "interests": row[3] if isinstance(row[3], list) else [],
+            "source_run_ids": row[4] if isinstance(row[4], dict) else {},
+            "params": row[5] if isinstance(row[5], dict) else {},
+            "created_at": row[6].isoformat() if row[6] is not None else None,
+        }
+
     def create_rerank_run(self, payload: Dict[str, Any]) -> int:
         sql = """
-        INSERT INTO rerank_runs (retrieval_run_id, model, max_length, batch_size, topn, instruction)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO rerank_runs (
+            retrieval_run_id, model, max_length, batch_size, topn, instruction,
+            source_table, source_run_id, dedup_run_id
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id;
         """
         vals = (
@@ -308,6 +455,9 @@ class PostgresStore:
             int(payload.get("batch_size") or 1),
             int(payload.get("topn") or 20),
             payload.get("instruction"),
+            payload.get("source_table") or "retrieval_hits",
+            int(payload.get("source_run_id") or payload["retrieval_run_id"]),
+            int(payload.get("dedup_run_id")) if payload.get("dedup_run_id") is not None else None,
         )
         with self.connect() as conn:
             with conn.cursor() as cur:
