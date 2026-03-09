@@ -290,3 +290,32 @@ yohan@neon:~/Desktop/note$
 Pour lancer le site web  : source .venv/bin/activate (car dépendances python qui n'était pas possible de prendre sans l'env virtuel)
 
 (.venv) pfe@neon:~$ python3 Documents/PFE/main/front/app.py #lance le site web, ensuite si on est sur un pc distant, il faut taper directement l'IP de la machine dans le navigateur : http://100.86.221.84:8080/ ou bien http://localhost:8000 pour yohan (j'ai pas testé mais ça devrait marcher)
+
+----------------------------------------------------
+
+# new retrieval call
+(.venv312) yohan@neon:/home/pfe/Documents/PFE$ python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --topk 1300   --max-expansions-per-interest 10   --dense-per-anchor 600   --dense-per-expansion 250   --bm25-title-k 150   --bm25-body-k 300   --rrf-k 60   --candidate-cap 2500   --min-sim 0.0   --min-bm25 0.0
+
+# new dedup
+
+/home/pfe/Documents/PFE/.venv312/bin/python main/depuplication.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news
+
+/home/pfe/Documents/PFE/.venv312/bin/python main/depuplication.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --interest "AI and LLMs"
+
+# new rerank
+
+/home/pfe/Documents/PFE/.venv312/bin/python main/reranker.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --table dedup_hits \
+  --run-id DEDUP_RUN_ID \
+  --topn 10 --hydrate
+
+# eval dedup :
+/home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --table dedup_hits \
+  --run-id 1 \
+  --eval-file main/ingestiontable/evalarticles/evalarticles.json
