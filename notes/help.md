@@ -292,11 +292,25 @@ Pour lancer le site web  : source .venv/bin/activate (car dépendances python qu
 (.venv) pfe@neon:~$ python3 Documents/PFE/main/front/app.py #lance le site web, ensuite si on est sur un pc distant, il faut taper directement l'IP de la machine dans le navigateur : http://100.86.221.84:8080/ ou bien http://localhost:8000 pour yohan (j'ai pas testé mais ça devrait marcher)
 
 ----------------------------------------------------
+# robin 09/03/
+
+j'ai rajouté un nouveau step
+maintenant c'est retrieval > deduplication > rerank > writting
+
+j'ai aussi changé le retrieval 
+
+sauf que la dedup marche pas. essaie dans faire une nouvelle version apres avoir fait marché ton ingestion 
+ou a alors au lieu de faire tout ce qu'il y a ci dessous tu peux te concentrer sur le design
+
+attention le dedup actuel dure 2h et est tres nulle, le rerank dure 30min
 
 # new retrieval call
 (.venv312) yohan@neon:/home/pfe/Documents/PFE$ python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --topk 1300   --max-expansions-per-interest 10   --dense-per-anchor 600   --dense-per-expansion 250   --bm25-title-k 150   --bm25-body-k 300   --rrf-k 60   --candidate-cap 2500   --min-sim 0.0   --min-bm25 0.0
 
-# new dedup
+(ne fait pas de nouveau retrieval, n'y touche pas et surtout pas de flag reindex)
+
+
+# new dedup (le truc a modifier)
 
 /home/pfe/Documents/PFE/.venv312/bin/python main/depuplication.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news
@@ -310,7 +324,7 @@ Pour lancer le site web  : source .venv/bin/activate (car dépendances python qu
 /home/pfe/Documents/PFE/.venv312/bin/python main/reranker.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --table dedup_hits \
-  --run-id DEDUP_RUN_ID \
+  --run-id 1 \
   --topn 10 --hydrate
 
 # eval dedup :
@@ -319,3 +333,18 @@ Pour lancer le site web  : source .venv/bin/activate (car dépendances python qu
   --table dedup_hits \
   --run-id 1 \
   --eval-file main/ingestiontable/evalarticles/evalarticles.json
+
+ensuite tu fais un writing normal
+et tu verfies avec 
+
+/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/fastcheckrerank/save.py
+
+http://127.0.0.1:8088/show-data
+
+regarde si les artcles parle de la meme chose ou non
+
+
+aussi side quest, supprime tout les interest français dans la base de donnée, dans rerank_hit, dans retrieval_hit aussi
+
+
+
