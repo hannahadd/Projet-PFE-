@@ -304,6 +304,8 @@ ou a alors au lieu de faire tout ce qu'il y a ci dessous tu peux te concentrer s
 
 attention le dedup actuel dure 2h et est tres nulle, le rerank dure 30min
 
+piste pour ameliorer dedup : https://chatgpt.com/share/69ae2ef6-1b50-8001-a569-d986f7806433
+
 # new retrieval call
 (.venv312) yohan@neon:/home/pfe/Documents/PFE$ python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --topk 1300   --max-expansions-per-interest 10   --dense-per-anchor 600   --dense-per-expansion 250   --bm25-title-k 150   --bm25-body-k 300   --rrf-k 60   --candidate-cap 2500   --min-sim 0.0   --min-bm25 0.0
 

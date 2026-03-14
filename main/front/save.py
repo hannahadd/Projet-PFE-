@@ -1,60 +1,53 @@
-from flask import Flask, render_template_string, request, redirect, url_for
-import psycopg2
 import sys
 import os
+from flask import Flask, render_template_string, request, redirect, url_for
+import psycopg2
+import threading
 
-# Ajout du chemin vers le dossier orchestration
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'orchestration')))
-from orchestration import lancer_generation_interet
+# Configuration du path pour trouver le module orchestration
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from orchestration.orchestration import traiter_pipeline
 
 app = Flask(__name__)
 
-# Configuration DB
 DB_CONFIG = {
     "host": "127.0.0.1", "database": "pfe_news",
     "user": "postgres", "password": "postgres", "port": "5432"
 }
 
+# Template HTML amélioré avec style CSS et gestion de l'état des checkbox
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<head>
-    <title>PFE News Stories</title>
-    <style>
-        .story-card { border: 1px solid #ccc; padding: 15px; margin: 10px; border-radius: 8px; background-color: #f9f9f9; }
-        body { font-family: sans-serif; padding: 20px; }
-        .add-interest { margin-top: 20px; padding: 10px; background: #e0e0e0; border-radius: 5px; }
-    </style>
-</head>
+<head><title>PFE News</title></head>
 <body>
     <h1>Mes Stories d'Actualités</h1>
+    
     <form action="/show-stories" method="post">
-        <p>Choisis tes intérêts :</p>
+        <strong>Choisis tes intérêts :</strong><br>
         {% for interest in all_interests %}
-            <input type="checkbox" name="interests" value="{{ interest }}" {% if interest in selected %}checked{% endif %}> {{ interest }}<br>
+            <input type="checkbox" name="interests" value="{{ interest }}" 
+                   {% if interest in selected_interests %}checked{% endif %}> {{ interest }}<br>
         {% endfor %}
-        <br><button type="submit">Générer mes Stories</button>
+        <button type="submit">Générer/Afficher</button>
     </form>
 
-    <div class="add-interest">
-        <form action="/add-interest" method="post">
-            <input type="text" name="new_interest" placeholder="Nouvel intérêt..." required>
-            <button type="submit">Ajouter l'intérêt</button>
-        </form>
-    </div>
+    <hr>
+    <form action="/add-interest" method="post">
+        <input type="text" name="new_interest" placeholder="Nouvel intérêt...">
+        <button type="submit">Ajouter</button>
+    </form>
 
     {% if stories %}
-        <hr>
         {% for interest, articles in stories.items() %}
-            <div class="story-card">
-                <h2>Story : {{ interest }}</h2>
-                {% if articles %}
-                    {% for art in articles %}
-                        <p><strong>{{ art[0] }}</strong> ({{ art[1] }})<br>{{ art[2] }}</p>
-                    {% endfor %}
-                {% else %}
-                    <p><em>Pas d'informations pour aujourd'hui ... Revenez demain !</em></p>
-                {% endif %}
+            <div style="border: 1px solid #ccc; padding: 15px; margin: 20px 0; border-radius: 12px; background-color: #f9f9f9;">
+                <h3>{{ interest }}</h3>
+                {% for art in articles %}
+                    <div style="margin-bottom: 15px; border-bottom: 1px solid #eee;">
+                        <strong>{{ art[0] }}</strong> <small>({{ art[1] }})</small>
+                        <p>{{ art[2] }}</p>
+                    </div>
+                {% endfor %}
             </div>
         {% endfor %}
     {% endif %}
@@ -72,36 +65,39 @@ def index():
     cur.execute("SELECT DISTINCT interest FROM article_summaries;")
     interests = [row[0] for row in cur.fetchall()]
     cur.close(); conn.close()
-    return render_template_string(HTML_TEMPLATE, all_interests=interests, stories=None)
+    return render_template_string(HTML_TEMPLATE, all_interests=interests, selected_interests=[], stories=None)
 
 @app.route('/add-interest', methods=['POST'])
 def add_interest():
     topic = request.form.get('new_interest')
     if topic:
-        lancer_generation_interet(topic)
+        threading.Thread(target=traiter_pipeline, args=(topic,)).start()
     return redirect(url_for('index'))
 
 @app.route('/show-stories', methods=['POST'])
 def show_stories():
     selected = request.form.getlist('interests')
     conn, cur = get_db_cursor()
-    cur.execute("SELECT DISTINCT interest FROM article_summaries;")
-    all_interests = [row[0] for row in cur.fetchall()]
     
+    # Récupérer tous les intérêts existants pour le menu
+    cur.execute("SELECT DISTINCT interest FROM article_summaries;")
+    all_ints = [row[0] for row in cur.fetchall()]
+    
+    # Récupérer les stories des sélectionnés
     stories = {}
     for interest in selected:
-        query = """
-            SELECT title, published_date, summary_fr 
-            FROM article_summaries 
-            WHERE interest = %s 
-            AND writing_run_id = (SELECT MAX(writing_run_id) FROM article_summaries WHERE interest = %s)
-            ORDER BY published_date DESC LIMIT 3;
-        """
-        cur.execute(query, (interest, interest))
+        cur.execute("""SELECT title, published_date, summary_fr FROM article_summaries 
+                        WHERE interest = %s AND writing_run_id = 
+                        (SELECT MAX(writing_run_id) FROM article_summaries WHERE interest = %s)
+                        ORDER BY published_date DESC LIMIT 3;""", (interest, interest))
         stories[interest] = cur.fetchall()
         
     cur.close(); conn.close()
-    return render_template_string(HTML_TEMPLATE, all_interests=all_interests, stories=stories, selected=selected)
+    
+    return render_template_string(HTML_TEMPLATE, 
+                                  all_interests=all_ints, 
+                                  selected_interests=selected, 
+                                  stories=stories)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)

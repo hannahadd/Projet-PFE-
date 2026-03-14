@@ -4,8 +4,8 @@ import shutil
 import re
 from pathlib import Path
 
-# --- CHEMIN DE TON ENVIRONNEMENT VIRTUEL ---
-PYTHON_VENV = "/home/pfe/.venv/bin/python"
+# --- CHEMIN MIS À JOUR : .venv312 ---
+PYTHON_VENV = "/home/pfe/Documents/PFE/.venv312/bin/python"
 
 # Chemins
 BASE_DIR = Path("/home/pfe/Documents/PFE")
@@ -21,7 +21,6 @@ def lancer_generation_interet(topic):
     
     TODO_DIR.mkdir(parents=True, exist_ok=True)
     
-    # Utilisation de PYTHON_VENV ici
     cmd = [
         PYTHON_VENV, str(script_path),
         "--model", "qwen3.5:9b-q4_K_M",
@@ -51,7 +50,7 @@ def traiter_pipeline(topic):
         else:
             raise FileNotFoundError(f"Fichier {topic_file} non trouvé.")
 
-        # 3. Retrieval (Utilisation de PYTHON_VENV)
+        # 3. Retrieval
         print(f"--- Retrieval : {topic_clean} ---")
         res_reco = subprocess.run([
             PYTHON_VENV, str(BASE_DIR / "main/news_reco.py"),
@@ -64,7 +63,7 @@ def traiter_pipeline(topic):
         if not retrieval_match: raise ValueError("Retrieval ID non trouvé")
         retrieval_id = retrieval_match.group(1)
         
-        # 4. Reranker (Utilisation de PYTHON_VENV)
+        # 4. Reranker
         print(f"--- Reranker : ID {retrieval_id} ---")
         res_rerank = subprocess.run([
             PYTHON_VENV, str(BASE_DIR / "main/reranker.py"),
@@ -73,11 +72,11 @@ def traiter_pipeline(topic):
             "--topn", "10", "--hydrate"
         ], capture_output=True, text=True, check=True)
         
-        rerank_match = re.search(r"rerank_run_id=(\d+)", rerank_res.stdout) if 'rerank_res' in locals() else re.search(r"rerank_run_id=(\d+)", res_rerank.stdout)
+        rerank_match = re.search(r"rerank_run_id=(\d+)", res_rerank.stdout)
         if not rerank_match: raise ValueError("Rerank ID non trouvé")
         rerank_id = rerank_match.group(1)
         
-        # 5. Writing (Utilisation de PYTHON_VENV)
+        # 5. Writing
         print(f"--- Writing : ID {rerank_id} ---")
         subprocess.run([
             PYTHON_VENV, str(BASE_DIR / "main/writing.py"),
