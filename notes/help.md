@@ -357,6 +357,13 @@ python main/reranker.py \
   --hydrate \
   --diversity-scan-k 80
 
-python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --table dedup_hits --run-id 2 --topn 10 --hydrate --diversity-scan-k 80 --qdrant-url http://localhost:6333 --qdrant-collection news_dense --embedding-sim-threshold 0.86 --pool-chunk-size 80
+python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --table dedup_hits --run-id 2 --topn 10 --hydrate --diversity-scan-k 80 --qdrant-url http://localhost:6333 --qdrant-collection news_dense --embedding-sim-threshold 0.78 --pool-chunk-size 80
+
+python main/reranker.py --qdrant-url http://localhost:6333 --qdrant-collection news_dense --id1 bb697484-71f7-c009-13ae-9826bdfff25b --id2 84937b50-c649-de58-7b27-73a0dc9a6337
 
 
+
+python main/reranker.py --qdrant-url http://localhost:6333 --qdrant-collection news_dense --id1 bcbce7d7-4fb0-337c-4ba0-edcbac6e1277 --id2 119c743c-307c-f4ec-105b-cf80fe5a65a7
+
+
+python main/reranker.py --qdrant-url http://localhost:6333 --qdrant-collection news_dense --id1 e33fc99d-109c-68e3-427d-ed9bd09123f4 --id2 d7f0c8b3-241d-36f4-2576-4644c60294cc

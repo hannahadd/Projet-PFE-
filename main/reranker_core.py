@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import torch
 
 
-DEFAULT_MODEL = "Qwen/Qwen3-Reranker-8B"
+DEFAULT_MODEL = "Qwen/Qwen3-Reranker-4B"
 DEFAULT_INSTRUCTION = (
 	"Given a user interest and a news article, score whether the article is "
 	"centrally about the interest. Prefer major new developments, official "
