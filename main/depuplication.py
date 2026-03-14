@@ -1,14 +1,42 @@
 from __future__ import annotations
 
 import argparse
-import json
+import importlib
 import re
+from collections import defaultdict
 from dataclasses import dataclass
-from difflib import SequenceMatcher
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 from db import PostgresStore
+
+try:
+	fuzz = importlib.import_module("rapidfuzz.fuzz")
+	_RAPIDFUZZ_IMPORT_ERROR: Optional[Exception] = None
+except Exception as exc:
+	fuzz = None
+	_RAPIDFUZZ_IMPORT_ERROR = exc
+
+try:
+	QdrantClient = importlib.import_module("qdrant_client").QdrantClient
+	qm = importlib.import_module("qdrant_client.http.models")
+	_QDRANT_IMPORT_ERROR: Optional[Exception] = None
+except Exception as exc:
+	QdrantClient = None
+	qm = None
+	_QDRANT_IMPORT_ERROR = exc
+
+
+def _require_dependencies(require_qdrant: bool) -> None:
+	if _RAPIDFUZZ_IMPORT_ERROR is not None:
+		raise RuntimeError(
+			"Missing dependency 'rapidfuzz'. Install with: pip install rapidfuzz"
+		) from _RAPIDFUZZ_IMPORT_ERROR
+	if require_qdrant and _QDRANT_IMPORT_ERROR is not None:
+		raise RuntimeError(
+			"Missing dependency 'qdrant-client'. Install with: pip install qdrant-client"
+		) from _QDRANT_IMPORT_ERROR
 
 
 def normalize_text(text: str) -> str:
@@ -30,18 +58,23 @@ def tokenize(text: str) -> List[str]:
 	return [tok for tok in re.findall(r"[a-z0-9][a-z0-9'_-]*", normalize_text(text)) if len(tok) > 1]
 
 
-def jaccard(a: Iterable[str], b: Iterable[str]) -> float:
-	sa = set(a)
-	sb = set(b)
-	if not sa or not sb:
-		return 0.0
-	return float(len(sa & sb) / max(1, len(sa | sb)))
+def _token_set(tokens: Iterable[str]) -> Set[str]:
+	return set(tokens)
 
 
-def ratio(a: str, b: str) -> float:
+def jaccard_set(a: Set[str], b: Set[str]) -> float:
 	if not a or not b:
 		return 0.0
-	return float(SequenceMatcher(None, a, b).ratio())
+	return float(len(a & b) / max(1, len(a | b)))
+
+
+def ratio(a: str, b: str, score_cutoff: int = 0) -> float:
+	if not a or not b:
+		return 0.0
+	score = fuzz.ratio(a, b, score_cutoff=score_cutoff)
+	if score is None:
+		return 0.0
+	return float(score) / 100.0
 
 
 def payload_text(payload: Dict[str, Any]) -> str:
@@ -52,6 +85,33 @@ def payload_text(payload: Dict[str, Any]) -> str:
 		or payload.get("description")
 		or ""
 	)
+
+
+def _safe_datetime_from_iso(value: str) -> Optional[datetime]:
+	raw = (value or "").strip()
+	if not raw:
+		return None
+	try:
+		return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+	except Exception:
+		return None
+
+
+def _title_char_ngrams(text: str, n: int = 3, max_items: int = 4) -> List[str]:
+	s = re.sub(r"[^a-z0-9]", "", text)
+	if len(s) < n:
+		return [f"g:{s}"] if s else []
+	seen: Set[str] = set()
+	out: List[str] = []
+	for i in range(0, len(s) - n + 1):
+		g = s[i : i + n]
+		if g in seen:
+			continue
+		seen.add(g)
+		out.append(f"g:{g}")
+		if len(out) >= max_items:
+			break
+	return out
 
 
 @dataclass
@@ -66,8 +126,18 @@ class PreparedHit:
 	body_norm: str
 	title_tokens: List[str]
 	body_tokens: List[str]
+	title_token_set: Set[str]
+	body_token_set: Set[str]
+	body_1200: str
+	body_1400: str
+	body_1600: str
+	title_len: int
+	body_len: int
 	url_norm: str
 	fingerprint: str
+	source_domain: str
+	lang: str
+	published_at: str
 
 
 Predicate = Callable[[PreparedHit, PreparedHit], Optional[str]]
@@ -78,6 +148,17 @@ def prepare_hit(hit: Dict[str, Any], interest: str, source_run_id: int) -> Prepa
 	article_id = str(hit.get("id") or payload.get("article_id") or "")
 	title = str(payload.get("title") or "")
 	body = payload_text(payload)
+	url_norm = normalize_url(str(payload.get("url") or ""))
+	title_tokens = tokenize(title)
+	body_tokens = tokenize(body)[:180]
+	title_norm = normalize_text(title)
+	body_norm = normalize_text(body)[:4000]
+	source_domain = str(payload.get("domain") or "").strip().lower()
+	if not source_domain and url_norm:
+		source_domain = urlsplit(url_norm).netloc.lower()
+	lang = str(payload.get("lang") or "").strip().lower()
+	published_at = str(payload.get("date") or payload.get("published_date") or "").strip()
+
 	return PreparedHit(
 		raw_hit=dict(hit),
 		interest=interest,
@@ -85,12 +166,22 @@ def prepare_hit(hit: Dict[str, Any], interest: str, source_run_id: int) -> Prepa
 		article_id=article_id,
 		score=float(hit.get("score") or 0.0),
 		payload=payload,
-		title_norm=normalize_text(title),
-		body_norm=normalize_text(body)[:4000],
-		title_tokens=tokenize(title),
-		body_tokens=tokenize(body)[:180],
-		url_norm=normalize_url(str(payload.get("url") or "")),
+		title_norm=title_norm,
+		body_norm=body_norm,
+		title_tokens=title_tokens,
+		body_tokens=body_tokens,
+		title_token_set=_token_set(title_tokens),
+		body_token_set=_token_set(body_tokens),
+		body_1200=body_norm[:1200],
+		body_1400=body_norm[:1400],
+		body_1600=body_norm[:1600],
+		title_len=len(title_norm),
+		body_len=len(body_norm),
+		url_norm=url_norm,
 		fingerprint=str(payload.get("fingerprint") or "").strip(),
+		source_domain=source_domain,
+		lang=lang,
+		published_at=published_at,
 	)
 
 
@@ -102,18 +193,18 @@ def is_simple_duplicate(kept: PreparedHit, cand: PreparedHit) -> Optional[str]:
 	if kept.fingerprint and cand.fingerprint and kept.fingerprint == cand.fingerprint:
 		return "same_fingerprint"
 	if kept.title_norm and cand.title_norm and kept.title_norm == cand.title_norm:
-		body_a = kept.body_norm[:1200]
-		body_b = cand.body_norm[:1200]
-		if body_a and body_b and (body_a == body_b or ratio(body_a, body_b) >= 0.98):
+		body_a = kept.body_1200
+		body_b = cand.body_1200
+		if body_a and body_b and (body_a == body_b or ratio(body_a, body_b, score_cutoff=98) >= 0.98):
 			return "same_title_same_body"
 	return None
 
 
 def is_near_text_duplicate(kept: PreparedHit, cand: PreparedHit) -> Optional[str]:
-	title_ratio = ratio(kept.title_norm, cand.title_norm)
-	body_ratio = ratio(kept.body_norm[:1600], cand.body_norm[:1600])
-	title_j = jaccard(kept.title_tokens, cand.title_tokens)
-	body_j = jaccard(kept.body_tokens, cand.body_tokens)
+	title_ratio = ratio(kept.title_norm, cand.title_norm, score_cutoff=72)
+	body_ratio = ratio(kept.body_1600, cand.body_1600, score_cutoff=80)
+	title_j = jaccard_set(kept.title_token_set, cand.title_token_set)
+	body_j = jaccard_set(kept.body_token_set, cand.body_token_set)
 
 	if title_ratio >= 0.96:
 		return "title_ratio>=0.96"
@@ -126,11 +217,11 @@ def is_near_text_duplicate(kept: PreparedHit, cand: PreparedHit) -> Optional[str
 	return None
 
 
-def is_same_story_duplicate(kept: PreparedHit, cand: PreparedHit) -> Optional[str]:
-	title_ratio = ratio(kept.title_norm, cand.title_norm)
-	body_ratio = ratio(kept.body_norm[:1400], cand.body_norm[:1400])
-	title_j = jaccard(kept.title_tokens, cand.title_tokens)
-	body_j = jaccard(kept.body_tokens, cand.body_tokens)
+def is_same_story_duplicate_light(kept: PreparedHit, cand: PreparedHit) -> Optional[str]:
+	title_ratio = ratio(kept.title_norm, cand.title_norm, score_cutoff=68)
+	body_ratio = ratio(kept.body_1400, cand.body_1400, score_cutoff=35)
+	title_j = jaccard_set(kept.title_token_set, cand.title_token_set)
+	body_j = jaccard_set(kept.body_token_set, cand.body_token_set)
 
 	if title_ratio >= 0.88 and body_ratio >= 0.45:
 		return "title_ratio>=0.88_body_ratio>=0.45"
@@ -167,6 +258,310 @@ def run_dedup_stage(hits: List[PreparedHit], predicate: Predicate, stage_name: s
 	return kept
 
 
+class BlockingIndex:
+	def __init__(self) -> None:
+		self.postings: Dict[str, List[int]] = defaultdict(list)
+		self.domain_postings: Dict[str, List[int]] = defaultdict(list)
+
+	@staticmethod
+	def _keys(hit: PreparedHit) -> List[str]:
+		keys: List[str] = []
+		for tok in list(dict.fromkeys(hit.title_tokens))[:6]:
+			keys.append(f"t:{tok}")
+			if hit.source_domain:
+				keys.append(f"d:{hit.source_domain}|{tok}")
+		keys.extend(_title_char_ngrams(hit.title_norm, n=3, max_items=4))
+		if not keys and hit.source_domain:
+			keys.append(f"donly:{hit.source_domain}")
+		return keys
+
+	def add(self, hit: PreparedHit, kept_idx: int) -> None:
+		for key in self._keys(hit):
+			self.postings[key].append(kept_idx)
+		if hit.source_domain:
+			self.domain_postings[hit.source_domain].append(kept_idx)
+
+	def shortlist(self, cand: PreparedHit, max_candidates: int) -> List[int]:
+		votes: Dict[int, int] = defaultdict(int)
+		for key in self._keys(cand):
+			bucket = self.postings.get(key) or []
+			for idx in bucket[-256:]:
+				votes[idx] += 1
+		if not votes and cand.source_domain:
+			for idx in self.domain_postings.get(cand.source_domain, [])[-max_candidates:]:
+				votes[idx] += 1
+		if not votes:
+			return []
+		ordered = sorted(votes.items(), key=lambda x: (-x[1], -x[0]))
+		return [idx for idx, _ in ordered[:max_candidates]]
+
+
+def _cheap_near_precheck(kept: PreparedHit, cand: PreparedHit) -> bool:
+	if kept.title_len and cand.title_len:
+		max_len = max(kept.title_len, cand.title_len)
+		if abs(kept.title_len - cand.title_len) > max(20, int(0.65 * max_len)):
+			return False
+	if kept.body_len and cand.body_len:
+		max_body = max(kept.body_len, cand.body_len)
+		if abs(kept.body_len - cand.body_len) > max(240, int(0.8 * max_body)):
+			return False
+	if kept.title_token_set and cand.title_token_set and not (kept.title_token_set & cand.title_token_set):
+		return False
+	return True
+
+
+def run_dedup_stage2_blocking(
+	hits: List[PreparedHit],
+	interest: str,
+	max_candidates: int = 120,
+) -> List[PreparedHit]:
+	kept: List[PreparedHit] = []
+	index = BlockingIndex()
+	reason_counts: Dict[str, int] = {}
+	removed = 0
+	total_shortlist = 0
+	total_checks = 0
+
+	for cand in hits:
+		shortlist = index.shortlist(cand, max_candidates=max_candidates)
+		total_shortlist += len(shortlist)
+		matched_reason: Optional[str] = None
+		for kept_idx in shortlist:
+			prev = kept[kept_idx]
+			if not _cheap_near_precheck(prev, cand):
+				continue
+			total_checks += 1
+			matched_reason = is_near_text_duplicate(prev, cand)
+			if matched_reason:
+				break
+
+		if matched_reason:
+			removed += 1
+			reason_counts[matched_reason] = reason_counts.get(matched_reason, 0) + 1
+			continue
+
+		kept_idx = len(kept)
+		kept.append(cand)
+		index.add(cand, kept_idx)
+
+	avg_shortlist = (total_shortlist / len(hits)) if hits else 0.0
+	avg_checks = (total_checks / len(hits)) if hits else 0.0
+	print(
+		f"[dedup:{interest}] deduplication texte similaire fini | in={len(hits)} out={len(kept)} removed={removed} avg_shortlist={avg_shortlist:.2f} avg_checks={avg_checks:.2f}"
+	)
+	if reason_counts:
+		details = ", ".join(f"{k}:{v}" for k, v in sorted(reason_counts.items(), key=lambda x: (-x[1], x[0])))
+		print(f"[dedup:{interest}] deduplication texte similaire reasons | {details}")
+	return kept
+
+
+@dataclass
+class Stage3Config:
+	qdrant_url: str = "http://localhost:6333"
+	qdrant_collection: str = "news_dense"
+	top_k: int = 40
+	max_intersection_candidates: int = 32
+	fallback_candidates: int = 24
+	date_window_days: int = 3
+	use_lang_filter: bool = True
+
+
+class QdrantNeighborFinder:
+	def __init__(self, cfg: Stage3Config) -> None:
+		self.cfg = cfg
+		self.client = QdrantClient(url=cfg.qdrant_url)
+		self._cache: Dict[Tuple[str, str, str], List[str]] = {}
+
+	def _build_filter(self, hit: PreparedHit) -> Optional[Any]:
+		must: List[Any] = []
+		if self.cfg.use_lang_filter and hit.lang:
+			must.append(qm.FieldCondition(key="lang", match=qm.MatchValue(value=hit.lang)))
+
+		if self.cfg.date_window_days > 0 and hit.published_at:
+			dt = _safe_datetime_from_iso(hit.published_at)
+			if dt is not None:
+				gte = (dt - timedelta(days=self.cfg.date_window_days)).isoformat()
+				lte = (dt + timedelta(days=self.cfg.date_window_days)).isoformat()
+				if hasattr(qm, "DatetimeRange"):
+					rng = qm.DatetimeRange(gte=gte, lte=lte)
+				else:
+					rng = qm.Range(gte=gte, lte=lte)
+				must.append(qm.FieldCondition(key="date", range=rng))
+
+		if not must:
+			return None
+		return qm.Filter(must=must)
+
+	def _recommend_neighbors(self, article_id: str, qfilter: Optional[Any]) -> List[str]:
+		if not hasattr(self.client, "recommend"):
+			return []
+		try:
+			recs = self.client.recommend(
+				collection_name=self.cfg.qdrant_collection,
+				positive=[article_id],
+				limit=self.cfg.top_k + 1,
+				query_filter=qfilter,
+				with_payload=False,
+				with_vectors=False,
+			)
+		except Exception:
+			return []
+		out: List[str] = []
+		for rec in recs or []:
+			rid = str(getattr(rec, "id", "") or "")
+			if rid and rid != article_id:
+				out.append(rid)
+		return out
+
+	def _vector_search_neighbors(self, article_id: str, qfilter: Optional[Any]) -> List[str]:
+		try:
+			recs = self.client.retrieve(
+				collection_name=self.cfg.qdrant_collection,
+				ids=[article_id],
+				with_payload=False,
+				with_vectors=True,
+			)
+		except Exception:
+			return []
+		if not recs:
+			return []
+		vec = getattr(recs[0], "vector", None)
+		if vec is None:
+			return []
+
+		hits: List[Any] = []
+		if hasattr(self.client, "search"):
+			try:
+				hits = self.client.search(
+					collection_name=self.cfg.qdrant_collection,
+					query_vector=vec,
+					limit=self.cfg.top_k + 1,
+					query_filter=qfilter,
+					with_payload=False,
+					with_vectors=False,
+				)
+			except Exception:
+				hits = []
+		elif hasattr(self.client, "search_points"):
+			try:
+				hits = self.client.search_points(
+					collection_name=self.cfg.qdrant_collection,
+					query_vector=vec,
+					limit=self.cfg.top_k + 1,
+					query_filter=qfilter,
+					with_payload=False,
+					with_vectors=False,
+				)
+			except Exception:
+				hits = []
+		else:
+			try:
+				resp = self.client.query_points(
+					collection_name=self.cfg.qdrant_collection,
+					query=vec,
+					limit=self.cfg.top_k + 1,
+					query_filter=qfilter,
+					with_payload=False,
+					with_vectors=False,
+				)
+				hits = list(getattr(resp, "points", []) or [])
+			except Exception:
+				hits = []
+
+		out: List[str] = []
+		for rec in hits:
+			rid = str(getattr(rec, "id", "") or "")
+			if rid and rid != article_id:
+				out.append(rid)
+		return out
+
+	def neighbors(self, hit: PreparedHit) -> List[str]:
+		article_id = str(hit.article_id or "").strip()
+		if not article_id:
+			return []
+
+		cache_key = (article_id, hit.lang, hit.published_at[:10])
+		cached = self._cache.get(cache_key)
+		if cached is not None:
+			return cached
+
+		qfilter = self._build_filter(hit)
+		out = self._recommend_neighbors(article_id, qfilter=qfilter)
+		if not out:
+			out = self._vector_search_neighbors(article_id, qfilter=qfilter)
+		out = out[: self.cfg.top_k]
+		self._cache[cache_key] = out
+		return out
+
+
+def run_dedup_stage3_qdrant(
+	hits: List[PreparedHit],
+	interest: str,
+	finder: QdrantNeighborFinder,
+	cfg: Stage3Config,
+) -> List[PreparedHit]:
+	kept: List[PreparedHit] = []
+	kept_by_article_id: Dict[str, int] = {}
+	fallback_index = BlockingIndex()
+	reason_counts: Dict[str, int] = {}
+	removed = 0
+	total_shortlist = 0
+	total_checks = 0
+	qdrant_queries = 0
+	qdrant_with_neighbors = 0
+	fallback_used = 0
+
+	for cand in hits:
+		qdrant_queries += 1
+		neighbor_ids = finder.neighbors(cand)
+		if neighbor_ids:
+			qdrant_with_neighbors += 1
+
+		shortlist: List[int] = []
+		seen_shortlist: Set[int] = set()
+		for nid in neighbor_ids:
+			idx = kept_by_article_id.get(str(nid))
+			if idx is not None and idx not in seen_shortlist:
+				shortlist.append(idx)
+				seen_shortlist.add(idx)
+			if len(shortlist) >= cfg.max_intersection_candidates:
+				break
+
+		if not shortlist:
+			fallback_used += 1
+			shortlist = fallback_index.shortlist(cand, max_candidates=cfg.fallback_candidates)
+
+		total_shortlist += len(shortlist)
+		matched_reason: Optional[str] = None
+		for kept_idx in shortlist:
+			prev = kept[kept_idx]
+			total_checks += 1
+			matched_reason = is_same_story_duplicate_light(prev, cand)
+			if matched_reason:
+				break
+
+		if matched_reason:
+			removed += 1
+			reason_counts[matched_reason] = reason_counts.get(matched_reason, 0) + 1
+			continue
+
+		new_idx = len(kept)
+		kept.append(cand)
+		if cand.article_id:
+			kept_by_article_id[cand.article_id] = new_idx
+		fallback_index.add(cand, new_idx)
+
+	avg_shortlist = (total_shortlist / len(hits)) if hits else 0.0
+	avg_checks = (total_checks / len(hits)) if hits else 0.0
+	print(
+		f"[dedup:{interest}] deduplication meme sujet fini | in={len(hits)} out={len(kept)} removed={removed} avg_shortlist={avg_shortlist:.2f} avg_checks={avg_checks:.2f} qdrant_neighbors={qdrant_with_neighbors}/{qdrant_queries} fallback_used={fallback_used}"
+	)
+	if reason_counts:
+		details = ", ".join(f"{k}:{v}" for k, v in sorted(reason_counts.items(), key=lambda x: (-x[1], x[0])))
+		print(f"[dedup:{interest}] deduplication meme sujet reasons | {details}")
+	return kept
+
+
 def build_output_hits(hits: List[PreparedHit]) -> List[Dict[str, Any]]:
 	out: List[Dict[str, Any]] = []
 	for rank, hit in enumerate(hits, 1):
@@ -189,14 +584,24 @@ def build_output_hits(hits: List[PreparedHit]) -> List[Dict[str, Any]]:
 	return out
 
 
-def deduplicate_interest_hits(raw_hits: List[Dict[str, Any]], interest: str, source_run_id: int) -> List[Dict[str, Any]]:
+def deduplicate_interest_hits(
+	raw_hits: List[Dict[str, Any]],
+	interest: str,
+	source_run_id: int,
+	stage3_cfg: Optional[Stage3Config] = None,
+	stage2_max_candidates: int = 120,
+) -> List[Dict[str, Any]]:
 	prepared = [prepare_hit(hit, interest=interest, source_run_id=source_run_id) for hit in raw_hits]
 	prepared.sort(key=lambda h: (int(h.raw_hit.get("rank") or 10**9), -h.score))
 
-	print(f"[dedup:{interest}] start | source_run_id={source_run_id} hits={len(prepared)}")
+	print(f"[dedup:{interest}] start | source_run_id={source_run_id} hits={len(prepared)}")	
 	stage1 = run_dedup_stage(prepared, is_simple_duplicate, "deduplication simple", interest)
-	stage2 = run_dedup_stage(stage1, is_near_text_duplicate, "deduplication texte similaire", interest)
-	stage3 = run_dedup_stage(stage2, is_same_story_duplicate, "deduplication meme sujet", interest)
+	stage2 = run_dedup_stage2_blocking(stage1, interest=interest, max_candidates=stage2_max_candidates)
+
+	cfg = stage3_cfg or Stage3Config()
+	finder = QdrantNeighborFinder(cfg)
+	stage3 = run_dedup_stage3_qdrant(stage2, interest=interest, finder=finder, cfg=cfg)
+
 	print(f"[dedup:{interest}] done | final_hits={len(stage3)}")
 	return build_output_hits(stage3)
 
@@ -205,11 +610,20 @@ def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Deduplicate latest retrieval hits per interest and store them in PostgreSQL")
 	parser.add_argument("--db-url", default="postgresql://postgres:postgres@localhost:5432/pfe_news")
 	parser.add_argument("--interest", "--interet", dest="interests", action="append", default=None)
+	parser.add_argument("--qdrant-url", default="http://localhost:6333")
+	parser.add_argument("--qdrant-collection", default="news_dense")
+	parser.add_argument("--stage2-max-candidates", type=int, default=120)
+	parser.add_argument("--stage3-topk", type=int, default=40)
+	parser.add_argument("--stage3-max-candidates", type=int, default=32)
+	parser.add_argument("--stage3-fallback-candidates", type=int, default=24)
+	parser.add_argument("--stage3-date-window-days", type=int, default=3)
+	parser.add_argument("--stage3-no-lang-filter", action="store_true")
 	return parser.parse_args()
 
 
 def main() -> int:
 	args = parse_args()
+	_require_dependencies(require_qdrant=True)
 
 	store = PostgresStore(args.db_url)
 	store.init_db()
@@ -223,6 +637,16 @@ def main() -> int:
 	for interest, run_id in latest_by_interest.items():
 		print(f"[dedup] selected latest retrieval run | interest={interest} retrieval_run_id={run_id}")
 
+	stage3_cfg = Stage3Config(
+		qdrant_url=str(args.qdrant_url),
+		qdrant_collection=str(args.qdrant_collection),
+		top_k=max(1, int(args.stage3_topk)),
+		max_intersection_candidates=max(1, int(args.stage3_max_candidates)),
+		fallback_candidates=max(1, int(args.stage3_fallback_candidates)),
+		date_window_days=max(0, int(args.stage3_date_window_days)),
+		use_lang_filter=not bool(args.stage3_no_lang_filter),
+	)
+
 	representative_retrieval_run_id = max(latest_by_interest.values())
 	dedup_run_id = store.create_dedup_run(
 		{
@@ -233,9 +657,19 @@ def main() -> int:
 			"params": {
 				"stages": [
 					"simple_text_duplicate",
-					"near_text_duplicate",
-					"same_story_duplicate",
-				]
+					"near_text_duplicate_blocking_rapidfuzz",
+					"same_story_qdrant_neighbors",
+				],
+				"qdrant": {
+					"url": stage3_cfg.qdrant_url,
+					"collection": stage3_cfg.qdrant_collection,
+					"top_k": stage3_cfg.top_k,
+					"max_intersection_candidates": stage3_cfg.max_intersection_candidates,
+					"fallback_candidates": stage3_cfg.fallback_candidates,
+					"date_window_days": stage3_cfg.date_window_days,
+					"use_lang_filter": stage3_cfg.use_lang_filter,
+				},
+				"stage2": {"max_candidates": max(1, int(args.stage2_max_candidates))},
 			},
 		}
 	)
@@ -248,7 +682,13 @@ def main() -> int:
 		if not block:
 			print(f"[dedup:{interest}] skipped | no block found in retrieval_run_id={run_id}")
 			continue
-		dedup_hits = deduplicate_interest_hits(block.get("hits") or [], interest=interest, source_run_id=run_id)
+		dedup_hits = deduplicate_interest_hits(
+			block.get("hits") or [],
+			interest=interest,
+			source_run_id=run_id,
+			stage3_cfg=stage3_cfg,
+			stage2_max_candidates=max(1, int(args.stage2_max_candidates)),
+		)
 		out_blocks.append({"interest": interest, "n": len(dedup_hits), "hits": dedup_hits})
 
 	n_rows = store.insert_dedup_hits(dedup_run_id, out_blocks)
