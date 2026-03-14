@@ -182,7 +182,7 @@ python main/writing.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --model qwen3.5:9b-q4_K_M \
   --interest-batch-size 10 --offset 0 --top_n 10 \
-  --rerank-run-id 12
+  --rerank-run-id 13
 
 
 # 9) Batch suivant (10 intérêts suivants)

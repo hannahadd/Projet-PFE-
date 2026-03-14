@@ -6,10 +6,20 @@ import os
 import re
 import sys
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlsplit, urlunsplit
+
+import numpy as np
+
+try:
+	from qdrant_client import QdrantClient
+	_HAS_QDRANT = True
+except Exception:
+	QdrantClient = None
+	_HAS_QDRANT = False
 
 from db import PostgresStore
 
@@ -30,6 +40,10 @@ def _require_dependencies() -> None:
 		raise RuntimeError(
 			"Missing dependency 'rapidfuzz'. Install with: pip install rapidfuzz"
 		) from _RAPIDFUZZ_IMPORT_ERROR
+	if not _HAS_QDRANT:
+		raise RuntimeError(
+			"Missing dependency 'qdrant-client'. Install with: pip install qdrant-client"
+		)
 
 
 def _load_src_reranker_module():
@@ -156,7 +170,11 @@ def _important_overlap(a: Set[str], b: Set[str]) -> Set[str]:
 @dataclass
 class CollapsePreparedHit:
 	raw_hit: Dict[str, Any]
+	sort_order: int
+	rerank_score: float
+	dense_rank: int
 	article_id: str
+	point_id: str
 	title_norm: str
 	body_norm: str
 	body_1200: str
@@ -167,11 +185,12 @@ class CollapsePreparedHit:
 	lang: str
 
 
-def prepare_collapse_hit(hit: Dict[str, Any]) -> CollapsePreparedHit:
+def prepare_collapse_hit(hit: Dict[str, Any], sort_order: int) -> CollapsePreparedHit:
 	payload = hit.get("payload") or {}
 	full = hit.get("full_article") or {}
 
 	article_id = str(hit.get("id") or payload.get("article_id") or full.get("article_id") or "").strip()
+	point_id = article_id
 	title = _pick_field(hit, "title")
 	summary = _pick_field(hit, "summary", "description", "excerpt")
 	body = payload_text(payload) or payload_text(full)
@@ -184,7 +203,11 @@ def prepare_collapse_hit(hit: Dict[str, Any]) -> CollapsePreparedHit:
 
 	return CollapsePreparedHit(
 		raw_hit=dict(hit),
+		sort_order=int(sort_order),
+		rerank_score=float(hit.get("rerank_score") or 0.0),
+		dense_rank=int(hit.get("dense_rank") or hit.get("rank") or (sort_order + 1)),
 		article_id=article_id,
+		point_id=point_id,
 		title_norm=title_norm,
 		body_norm=body_norm,
 		body_1200=body_norm[:1200],
@@ -196,41 +219,227 @@ def prepare_collapse_hit(hit: Dict[str, Any]) -> CollapsePreparedHit:
 	)
 
 
-def is_post_rerank_same_story(kept: CollapsePreparedHit, cand: CollapsePreparedHit) -> Optional[str]:
-	if kept.article_id and cand.article_id and kept.article_id == cand.article_id:
+def _exact_same_story_reason(a: CollapsePreparedHit, b: CollapsePreparedHit) -> Optional[str]:
+	if a.article_id and b.article_id and a.article_id == b.article_id:
 		return "same_article_id"
-	if kept.url_norm and cand.url_norm and kept.url_norm == cand.url_norm:
+	if a.url_norm and b.url_norm and a.url_norm == b.url_norm:
 		return "same_url"
-	if kept.fingerprint and cand.fingerprint and kept.fingerprint == cand.fingerprint:
+	if a.fingerprint and b.fingerprint and a.fingerprint == b.fingerprint:
 		return "same_fingerprint"
-
-	title_ratio = ratio(kept.title_norm, cand.title_norm, score_cutoff=75)
-	title_set_ratio = token_set_ratio(kept.title_norm, cand.title_norm, score_cutoff=75)
-	body_ratio = ratio(kept.body_1200, cand.body_1200, score_cutoff=30)
-	title_j = jaccard_set(kept.title_token_set, cand.title_token_set)
-	body_j = jaccard_set(kept.body_token_set, cand.body_token_set)
-	important_title_overlap = _important_overlap(kept.title_token_set, cand.title_token_set)
-	important_body_overlap = _important_overlap(kept.body_token_set, cand.body_token_set)
-
-	if title_set_ratio >= 0.97:
-		return "title_token_set_ratio>=0.97"
-	if title_ratio >= 0.93 and body_j >= 0.12:
-		return "title_ratio>=0.93_body_j>=0.12"
-	if body_ratio >= 0.94 and title_j >= 0.10:
-		return "body_ratio>=0.94_title_j>=0.10"
-	if title_set_ratio >= 0.88 and body_j >= 0.18:
-		return "title_token_set_ratio>=0.88_body_j>=0.18"
-	if len(important_title_overlap) >= 3 and body_j >= 0.14:
-		return "important_title_overlap>=3_body_j>=0.14"
-	if len(important_title_overlap) >= 2 and len(important_body_overlap) >= 5 and body_j >= 0.10:
-		return "important_title_overlap>=2_important_body_overlap>=5"
-
-	# Cas cross-language / forte reformulation
-	if kept.lang and cand.lang and kept.lang != cand.lang:
-		if len(important_title_overlap) >= 2 and len(important_body_overlap) >= 4 and body_j >= 0.08:
-			return "cross_lang_anchor_overlap"
-
 	return None
+
+
+def _lexical_fallback_same_story_reason(a: CollapsePreparedHit, b: CollapsePreparedHit) -> Optional[str]:
+	title_set_ratio = token_set_ratio(a.title_norm, b.title_norm, score_cutoff=88)
+	body_ratio = ratio(a.body_1200, b.body_1200, score_cutoff=55)
+	title_j = jaccard_set(a.title_token_set, b.title_token_set)
+	body_j = jaccard_set(a.body_token_set, b.body_token_set)
+	important_title_overlap = _important_overlap(a.title_token_set, b.title_token_set)
+
+	if title_set_ratio >= 0.96:
+		return "fallback_title_token_set_ratio>=0.96"
+	if title_set_ratio >= 0.90 and body_j >= 0.18:
+		return "fallback_title_token_set_ratio>=0.90_body_j>=0.18"
+	if body_ratio >= 0.95 and title_j >= 0.12:
+		return "fallback_body_ratio>=0.95"
+	if len(important_title_overlap) >= 3 and body_j >= 0.12:
+		return "fallback_anchor_overlap"
+	return None
+
+
+class UnionFind:
+	def __init__(self, n: int):
+		self.parent = list(range(n))
+		self.rank = [0] * n
+
+	def find(self, x: int) -> int:
+		while self.parent[x] != x:
+			self.parent[x] = self.parent[self.parent[x]]
+			x = self.parent[x]
+		return x
+
+	def union(self, a: int, b: int) -> bool:
+		ra = self.find(a)
+		rb = self.find(b)
+		if ra == rb:
+			return False
+		if self.rank[ra] < self.rank[rb]:
+			self.parent[ra] = rb
+		elif self.rank[ra] > self.rank[rb]:
+			self.parent[rb] = ra
+		else:
+			self.parent[rb] = ra
+			self.rank[ra] += 1
+		return True
+
+
+class QdrantVectorProvider:
+	def __init__(self, url: str, collection: str):
+		self.url = str(url)
+		self.collection = str(collection)
+		self.client = QdrantClient(url=self.url)
+
+	@staticmethod
+	def _as_vector(raw: Any) -> Optional[np.ndarray]:
+		if raw is None:
+			return None
+		if isinstance(raw, dict):
+			if not raw:
+				return None
+			raw = next(iter(raw.values()), None)
+		if raw is None:
+			return None
+		try:
+			vec = np.asarray(raw, dtype=np.float32).reshape(-1)
+			if vec.size == 0:
+				return None
+			norm = float(np.linalg.norm(vec))
+			if norm <= 1e-12:
+				return None
+			vec = vec / norm
+			return vec
+		except Exception:
+			return None
+
+	def fetch_vectors(self, point_ids: List[str], batch_size: int = 128) -> Dict[str, np.ndarray]:
+		ids = [str(x).strip() for x in point_ids if str(x).strip()]
+		if not ids:
+			return {}
+
+		out: Dict[str, np.ndarray] = {}
+		for i in range(0, len(ids), max(1, int(batch_size))):
+			batch = ids[i : i + max(1, int(batch_size))]
+			try:
+				records = self.client.retrieve(
+					collection_name=self.collection,
+					ids=batch,
+					with_payload=False,
+					with_vectors=True,
+				)
+			except Exception:
+				continue
+
+			for record in records or []:
+				rid = str(getattr(record, "id", "") or "")
+				if not rid:
+					continue
+				vec = self._as_vector(getattr(record, "vector", None))
+				if vec is None:
+					continue
+				out[rid] = vec
+		return out
+
+
+@dataclass
+class ClusterStats:
+	pool_size: int
+	qdrant_found: int
+	qdrant_missing: int
+	pair_total: int
+	pair_checks_vector: int
+	pair_checks_fallback: int
+	edges_total: int
+	edges_embedding: int
+	clusters: int
+	representatives: int
+	reasons: Dict[str, int]
+
+
+def _cluster_pool_semantic(
+	pool_hits: List[Dict[str, Any]],
+	vector_provider: QdrantVectorProvider,
+	embedding_sim_threshold: float,
+) -> Tuple[List[CollapsePreparedHit], ClusterStats]:
+	pool_docs = [prepare_collapse_hit(h, sort_order=i) for i, h in enumerate(pool_hits)]
+	n = len(pool_docs)
+	if n == 0:
+		return [], ClusterStats(
+			pool_size=0,
+			qdrant_found=0,
+			qdrant_missing=0,
+			pair_total=0,
+			pair_checks_vector=0,
+			pair_checks_fallback=0,
+			edges_total=0,
+			edges_embedding=0,
+			clusters=0,
+			representatives=0,
+			reasons={},
+		)
+
+	point_ids = [d.point_id for d in pool_docs if d.point_id]
+	vectors = vector_provider.fetch_vectors(point_ids)
+	qdrant_found = sum(1 for d in pool_docs if d.point_id and d.point_id in vectors)
+	qdrant_missing = n - qdrant_found
+
+	sim_threshold = max(-1.0, min(1.0, float(embedding_sim_threshold)))
+	uf = UnionFind(n)
+	reason_counts: Counter[str] = Counter()
+	edges_total = 0
+	edges_embedding = 0
+	pair_checks_vector = 0
+	pair_checks_fallback = 0
+
+	for i in range(n):
+		a = pool_docs[i]
+		for j in range(i + 1, n):
+			b = pool_docs[j]
+
+			reason_exact = _exact_same_story_reason(a, b)
+			if reason_exact:
+				if uf.union(i, j):
+					edges_total += 1
+					reason_counts[reason_exact] += 1
+				continue
+
+			va = vectors.get(a.point_id)
+			vb = vectors.get(b.point_id)
+			if va is not None and vb is not None:
+				pair_checks_vector += 1
+				sim = float(np.dot(va, vb))
+				if sim >= sim_threshold:
+					if uf.union(i, j):
+						edges_total += 1
+						edges_embedding += 1
+						reason_counts[f"embedding_sim>={sim_threshold:.2f}"] += 1
+				continue
+
+			# Fallback lexical léger UNIQUEMENT si vecteurs absents.
+			pair_checks_fallback += 1
+			reason_fallback = _lexical_fallback_same_story_reason(a, b)
+			if reason_fallback and uf.union(i, j):
+				edges_total += 1
+				reason_counts[reason_fallback] += 1
+
+	clusters: Dict[int, List[CollapsePreparedHit]] = {}
+	for idx, doc in enumerate(pool_docs):
+		root = uf.find(idx)
+		clusters.setdefault(root, []).append(doc)
+
+	representatives: List[CollapsePreparedHit] = []
+	for members in clusters.values():
+		best = sorted(
+			members,
+			key=lambda d: (-d.rerank_score, d.dense_rank, d.sort_order),
+		)[0]
+		representatives.append(best)
+
+	representatives.sort(key=lambda d: (-d.rerank_score, d.dense_rank, d.sort_order))
+
+	stats = ClusterStats(
+		pool_size=n,
+		qdrant_found=qdrant_found,
+		qdrant_missing=qdrant_missing,
+		pair_total=(n * (n - 1)) // 2,
+		pair_checks_vector=pair_checks_vector,
+		pair_checks_fallback=pair_checks_fallback,
+		edges_total=edges_total,
+		edges_embedding=edges_embedding,
+		clusters=len(clusters),
+		representatives=len(representatives),
+		reasons=dict(reason_counts),
+	)
+	return representatives, stats
 
 
 def collapse_reranked_hits(
@@ -238,77 +447,73 @@ def collapse_reranked_hits(
 	interest: str,
 	final_topn: int,
 	diversity_scan_k: int,
+	vector_provider: QdrantVectorProvider,
+	embedding_sim_threshold: float,
+	pool_chunk_size: int,
 ) -> List[Dict[str, Any]]:
 	if not hits:
 		return []
 
 	target = max(1, int(final_topn))
 	scan_k = max(target, int(diversity_scan_k))
-
+	chunk_size = max(1, int(pool_chunk_size))
 	sorted_hits = sorted(hits, key=lambda x: x.get("rerank_score", 0.0), reverse=True)
-	pool = sorted_hits[:scan_k]
 
-	selected_raw: List[Dict[str, Any]] = []
-	selected_prepared: List[CollapsePreparedHit] = []
-	reason_counts: Dict[str, int] = {}
-	collapsed = 0
-	comparisons = 0
+	pool_end = min(len(sorted_hits), scan_k)
+	representatives, stats = _cluster_pool_semantic(
+		sorted_hits[:pool_end],
+		vector_provider=vector_provider,
+		embedding_sim_threshold=embedding_sim_threshold,
+	)
 
-	def try_add(candidate_hit: Dict[str, Any]) -> bool:
-		nonlocal collapsed, comparisons
-		cand = prepare_collapse_hit(candidate_hit)
-		for prev in selected_prepared:
-			comparisons += 1
-			reason = is_post_rerank_same_story(prev, cand)
-			if reason:
-				collapsed += 1
-				reason_counts[reason] = reason_counts.get(reason, 0) + 1
-				return False
-		selected_prepared.append(cand)
-		selected_raw.append(candidate_hit)
-		return True
+	while len(representatives) < target and pool_end < len(sorted_hits):
+		pool_end = min(len(sorted_hits), pool_end + chunk_size)
+		representatives, stats = _cluster_pool_semantic(
+			sorted_hits[:pool_end],
+			vector_provider=vector_provider,
+			embedding_sim_threshold=embedding_sim_threshold,
+		)
 
-	for h in pool:
-		try_add(h)
-		if len(selected_raw) >= target:
-			break
-
-	# Si le pool initial ne suffit pas à remplir topn unique, on continue plus bas.
-	if len(selected_raw) < target and len(sorted_hits) > len(pool):
-		for h in sorted_hits[len(pool):]:
-			try_add(h)
-			if len(selected_raw) >= target:
-				break
-
-	for i, h in enumerate(selected_raw, 1):
-		h["rank"] = i
+	final_docs = representatives[:target]
+	final_hits: List[Dict[str, Any]] = []
+	for rank, d in enumerate(final_docs, 1):
+		h = dict(d.raw_hit)
+		h["rank"] = rank
+		final_hits.append(h)
 
 	print(
-		f"[rerank:{interest}] post-rerank diversity fini | "
-		f"input={len(hits)} scan={min(len(sorted_hits), scan_k)} "
-		f"final={len(selected_raw)} collapsed={collapsed} comparisons={comparisons}"
+		f"[rerank:{interest}] post-rerank semantic clustering fini | "
+		f"input={len(hits)} pool={stats.pool_size} qdrant_found={stats.qdrant_found} "
+		f"qdrant_missing={stats.qdrant_missing} pair_checks={stats.pair_checks_vector} "
+		f"fallback_checks={stats.pair_checks_fallback} edges={stats.edges_total} "
+		f"embedding_edges={stats.edges_embedding} clusters={stats.clusters} "
+		f"representatives={stats.representatives} final={len(final_hits)}"
 	)
-	if reason_counts:
+	if stats.reasons:
 		details = ", ".join(
-			f"{k}:{v}" for k, v in sorted(reason_counts.items(), key=lambda x: (-x[1], x[0]))
+			f"{k}:{v}" for k, v in sorted(stats.reasons.items(), key=lambda x: (-x[1], x[0]))
 		)
-		print(f"[rerank:{interest}] post-rerank diversity reasons | {details}")
+		print(f"[rerank:{interest}] post-rerank semantic clustering reasons | {details}")
 
-	return selected_raw
+	return final_hits
 
 
 def main() -> int:
 	_require_dependencies()
 
-	parser = argparse.ArgumentParser(description="Rerank retrieval candidates from PostgreSQL with post-rerank diversity")
+	parser = argparse.ArgumentParser(description="Rerank retrieval candidates from PostgreSQL with semantic post-rerank clustering")
 	parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))
 	parser.add_argument("--table", choices=["retrieval_hits", "dedup_hits"], default="retrieval_hits")
 	parser.add_argument("--retrieval-run-id", "--run-id", dest="run_id", type=int, required=True)
 	parser.add_argument("--model", default=core.DEFAULT_MODEL)
 	parser.add_argument("--max-length", type=int, default=1024)
 	parser.add_argument("--batch-size", type=int, default=1)
-	parser.add_argument("--topn", type=int, default=20, help="Final top-N kept after rerank + diversity collapse")
-	parser.add_argument("--diversity-scan-k", type=int, default=80, help="Number of top reranked candidates scanned before story collapse")
+	parser.add_argument("--topn", type=int, default=20, help="Final top-N kept after rerank + semantic clustering")
+	parser.add_argument("--diversity-scan-k", type=int, default=80, help="Initial top reranked pool size used for semantic story clustering")
+	parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"))
+	parser.add_argument("--qdrant-collection", default="news_dense")
+	parser.add_argument("--embedding-sim-threshold", type=float, default=0.86)
+	parser.add_argument("--pool-chunk-size", type=int, default=80)
 	parser.add_argument("--instruction", default=DEFAULT_INSTRUCTION)
 	parser.add_argument("--hydrate", action="store_true", help="Attach full article from PostgreSQL articles table")
 	args = parser.parse_args()
@@ -332,6 +537,11 @@ def main() -> int:
 
 	if not blocks:
 		raise RuntimeError(f"No hits found for table={args.table} run_id={args.run_id}")
+
+	vector_provider = QdrantVectorProvider(
+		url=str(args.qdrant_url),
+		collection=str(args.qdrant_collection),
+	)
 
 	reranker = core.QwenReranker(
 		model_name=args.model,
@@ -373,6 +583,9 @@ def main() -> int:
 			interest=interest,
 			final_topn=int(args.topn),
 			diversity_scan_k=max(int(args.topn), int(args.diversity_scan_k)),
+			vector_provider=vector_provider,
+			embedding_sim_threshold=float(args.embedding_sim_threshold),
+			pool_chunk_size=int(args.pool_chunk_size),
 		)
 
 		out_blocks.append({"interest": interest, "n": len(final_hits), "hits": final_hits})
@@ -389,8 +602,15 @@ def main() -> int:
 			"source_run_id": int(args.run_id),
 			"dedup_run_id": dedup_run_id,
 			"postprocess": {
-				"type": "greedy_story_collapse",
+				"type": "semantic_story_cluster_representative_selection",
+				"vector_source": "existing_qdrant_bge_m3",
+				"qdrant_url": str(args.qdrant_url),
+				"qdrant_collection": str(args.qdrant_collection),
+				"embedding_similarity_threshold": float(args.embedding_sim_threshold),
 				"diversity_scan_k": max(int(args.topn), int(args.diversity_scan_k)),
+				"pool_chunk_size": int(args.pool_chunk_size),
+				"cluster_method": "union_find",
+				"representative": "best_rerank_score_then_dense_rank_then_order",
 			},
 		}
 	)
