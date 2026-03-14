@@ -34,6 +34,9 @@ def format_instruction(instruction: Optional[str], query: str, doc: str) -> str:
 
 
 def _token_id_for_word(tokenizer, word: str) -> int:
+	tok_id = tokenizer.convert_tokens_to_ids(word)
+	if isinstance(tok_id, int) and tok_id >= 0:
+		return int(tok_id)
 	ids = tokenizer.encode(word, add_special_tokens=False)
 	if not ids:
 		raise RuntimeError(f"Could not tokenize word={word!r}")

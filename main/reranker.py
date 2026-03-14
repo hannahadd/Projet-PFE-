@@ -29,10 +29,13 @@ def _load_src_reranker_module():
 core = _load_src_reranker_module()
 DEFAULT_INSTRUCTION = core.DEFAULT_INSTRUCTION
 DEFAULT_PAIRWISE_INSTRUCTION = (
-	"Given two news articles, answer yes only if they are primarily about the same event or the same core story, "
-	"even if written in different languages or with different wording."
+	"Given a reference news article and a candidate news article, answer yes only if they report "
+	"the same specific real-world news event or announcement. Treat different outlet framing, "
+	"different wording, translations, and consequence-focused headlines as the same story when "
+	"the underlying event is the same. Answer no for merely related topics, background, analysis, "
+	"or follow-up commentary about a broader subject."
 )
-DEFAULT_PAIRWISE_QUERY = "same_story_or_same_event"
+PAIRWISE_BODY_CHARS = 600
 
 
 @dataclass
@@ -62,7 +65,7 @@ def _extract_pairwise_doc_text(hit: Dict[str, Any]) -> str:
 	title = _pick_text(hit, "title").strip()
 	summary = _pick_text(hit, "summary", "description", "excerpt").strip()
 	body = _pick_text(hit, "canonical_text", "text", "content", "body").strip()
-	lead = body[:1400].strip()
+	lead = body[:PAIRWISE_BODY_CHARS].strip()
 
 	parts: List[str] = []
 	if title:
@@ -79,8 +82,29 @@ def _extract_pairwise_doc_text(hit: Dict[str, Any]) -> str:
 
 
 def _build_pairwise_prompt(doc_a: str, doc_b: str) -> str:
-	pair_doc = f"ARTICLE_A:\n{doc_a}\n\nARTICLE_B:\n{doc_b}"
-	return core.format_instruction(DEFAULT_PAIRWISE_INSTRUCTION, DEFAULT_PAIRWISE_QUERY, pair_doc)
+	query = (
+		"Reference news article:\n"
+		f"{doc_a}\n\n"
+		"Task: retrieve documents about the same specific news event or announcement. "
+		"Different outlet framing is allowed if the underlying event is the same."
+	)
+	return core.format_instruction(DEFAULT_PAIRWISE_INSTRUCTION, query, doc_b)
+
+
+def _pairwise_score_bidirectional(
+	reranker: Any,
+	doc_a: str,
+	doc_b: str,
+	batch_size: int,
+) -> float:
+	prompt_ab = _build_pairwise_prompt(doc_a, doc_b)
+	prompt_ba = _build_pairwise_prompt(doc_b, doc_a)
+	scores = reranker.score_pairs([prompt_ab, prompt_ba], batch_size=max(1, int(batch_size)))
+	if not scores:
+		return 0.0
+	if len(scores) == 1:
+		return float(scores[0])
+	return float((float(scores[0]) + float(scores[1])) / 2.0)
 
 
 def _prepare_pairwise_docs(sorted_hits: List[Dict[str, Any]]) -> List[PairwiseDoc]:
@@ -96,6 +120,71 @@ def _prepare_pairwise_docs(sorted_hits: List[Dict[str, Any]]) -> List[PairwiseDo
 			)
 		)
 	return docs
+
+
+def _hit_from_article_row(article: Dict[str, Any]) -> Dict[str, Any]:
+	article = dict(article or {})
+	payload = {
+		"article_id": article.get("id"),
+		"title": article.get("title") or "",
+		"canonical_text": article.get("content") or "",
+		"text": article.get("content") or "",
+		"url": article.get("url") or "",
+		"fingerprint": article.get("fingerprint") or "",
+		"lang": article.get("lang") or "",
+	}
+	return {
+		"id": article.get("id"),
+		"rank": 1,
+		"payload": payload,
+		"full_article": article,
+	}
+
+
+def run_manual_pairwise_judge(
+	store: PostgresStore,
+	reranker: Any,
+	id1: str,
+	id2: str,
+	threshold: float,
+	pairwise_batch_size: int,
+) -> int:
+	left_id = str(id1 or "").strip()
+	right_id = str(id2 or "").strip()
+	if not left_id or not right_id:
+		raise RuntimeError("Provide both --id1 and --id2 for manual judge mode")
+
+	a1 = store.find_article(article_id=left_id, url=None)
+	a2 = store.find_article(article_id=right_id, url=None)
+	if a1 is None or a2 is None:
+		print(
+			"[pairwise:manual] lookup | "
+			f"id1_found={a1 is not None} id2_found={a2 is not None}"
+		)
+		if a1 is None:
+			print(f"[pairwise:manual] missing article for id1={left_id}")
+		if a2 is None:
+			print(f"[pairwise:manual] missing article for id2={right_id}")
+		return 2
+
+	h1 = _hit_from_article_row(a1)
+	h2 = _hit_from_article_row(a2)
+	doc1 = _extract_pairwise_doc_text(h1)
+	doc2 = _extract_pairwise_doc_text(h2)
+	score = _pairwise_score_bidirectional(
+		reranker=reranker,
+		doc_a=doc1,
+		doc_b=doc2,
+		batch_size=max(1, int(pairwise_batch_size)),
+	)
+	verdict = "yes" if score >= float(threshold) else "no"
+
+	print(
+		"[pairwise:manual] result | "
+		f"id1={left_id} id2={right_id} score={score:.6f} "
+		f"threshold={float(threshold):.3f} same_story={verdict}"
+	)
+	return 0
 
 
 def _greedy_pairwise_keep(
@@ -121,15 +210,29 @@ def _greedy_pairwise_keep(
 		if len(kept) >= target:
 			break
 
-		prompts = [_build_pairwise_prompt(prev.doc_text, cand.doc_text) for prev in kept]
-		if not prompts:
+		if not kept:
 			kept.append(cand)
 			continue
 
-		scores = reranker.score_pairs(prompts, batch_size=max(1, int(pairwise_batch_size)))
-		comparisons += len(prompts)
+		pair_prompts: List[str] = []
+		for prev in kept:
+			pair_prompts.append(_build_pairwise_prompt(prev.doc_text, cand.doc_text))
+			pair_prompts.append(_build_pairwise_prompt(cand.doc_text, prev.doc_text))
 
-		is_same_story = any(float(score) >= threshold for score in scores)
+		scores = reranker.score_pairs(pair_prompts, batch_size=max(1, int(pairwise_batch_size)))
+		if len(scores) < (2 * len(kept)):
+			scores = list(scores) + [0.0] * ((2 * len(kept)) - len(scores))
+
+		is_same_story = False
+		for idx_prev in range(len(kept)):
+			s_ab = float(scores[2 * idx_prev])
+			s_ba = float(scores[2 * idx_prev + 1])
+			pair_avg = (s_ab + s_ba) / 2.0
+			comparisons += 1
+			if pair_avg >= threshold:
+				is_same_story = True
+				break
+
 		if is_same_story:
 			rejected += 1
 			reason_counts[f"pairwise_yes>={threshold:.2f}"] += 1
@@ -191,12 +294,14 @@ def main() -> int:
 	parser = argparse.ArgumentParser(description="Rerank retrieval candidates from PostgreSQL with pairwise post-rerank clustering")
 	parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))
 	parser.add_argument("--table", choices=["retrieval_hits", "dedup_hits"], default="retrieval_hits")
-	parser.add_argument("--retrieval-run-id", "--run-id", dest="run_id", type=int, required=True)
+	parser.add_argument("--retrieval-run-id", "--run-id", dest="run_id", type=int, required=False)
 	parser.add_argument("--model", default=core.DEFAULT_MODEL)
 	parser.add_argument("--max-length", type=int, default=1024)
 	parser.add_argument("--batch-size", type=int, default=1)
 	parser.add_argument("--pairwise-batch-size", type=int, default=2)
 	parser.add_argument("--pairwise-threshold", type=float, default=0.62)
+	parser.add_argument("--id1", default=None, help="Manual pairwise judge: article_id #1")
+	parser.add_argument("--id2", default=None, help="Manual pairwise judge: article_id #2")
 	parser.add_argument("--topn", type=int, default=20, help="Final top-N kept after rerank + pairwise clustering")
 	parser.add_argument("--diversity-scan-k", type=int, default=80, help="Top reranked pool size used for pairwise clustering")
 	parser.add_argument("--instruction", default=DEFAULT_INSTRUCTION)
@@ -205,6 +310,25 @@ def main() -> int:
 
 	store = PostgresStore(args.db_url)
 	store.init_db()
+
+	reranker = core.QwenReranker(
+		model_name=args.model,
+		max_length=int(args.max_length),
+		instruction=args.instruction,
+	)
+
+	if args.id1 or args.id2:
+		return run_manual_pairwise_judge(
+			store=store,
+			reranker=reranker,
+			id1=str(args.id1 or ""),
+			id2=str(args.id2 or ""),
+			threshold=float(args.pairwise_threshold),
+			pairwise_batch_size=max(1, int(args.pairwise_batch_size)),
+		)
+
+	if args.run_id is None:
+		raise RuntimeError("--run-id is required unless you use manual mode with --id1 and --id2")
 
 	if args.table == "retrieval_hits":
 		blocks = store.fetch_retrieval_blocks(args.run_id)
@@ -222,12 +346,6 @@ def main() -> int:
 
 	if not blocks:
 		raise RuntimeError(f"No hits found for table={args.table} run_id={args.run_id}")
-
-	reranker = core.QwenReranker(
-		model_name=args.model,
-		max_length=int(args.max_length),
-		instruction=args.instruction,
-	)
 
 	out_blocks: List[Dict[str, Any]] = []
 	for block in blocks:
@@ -289,6 +407,8 @@ def main() -> int:
 				"selection_method": "greedy_compare_with_kept_only",
 				"pairwise_model": str(args.model),
 				"pairwise_threshold": float(args.pairwise_threshold),
+				"pairwise_direction": "bidirectional_mean",
+				"pairwise_body_chars": int(PAIRWISE_BODY_CHARS),
 				"order": "rerank_desc",
 			},
 		}
