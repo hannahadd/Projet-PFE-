@@ -182,7 +182,7 @@ python main/writing.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --model qwen3.5:9b-q4_K_M \
   --interest-batch-size 10 --offset 0 --top_n 10 \
-  --rerank-run-id 13
+  --rerank-run-id 14
 
 
 # 9) Batch suivant (10 intérêts suivants)
@@ -357,5 +357,6 @@ python main/reranker.py \
   --hydrate \
   --diversity-scan-k 80
 
+python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --table dedup_hits --run-id 2 --topn 10 --hydrate --diversity-scan-k 80 --qdrant-url http://localhost:6333 --qdrant-collection news_dense --embedding-sim-threshold 0.86 --pool-chunk-size 80
 
 

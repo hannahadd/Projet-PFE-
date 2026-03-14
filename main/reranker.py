@@ -329,6 +329,33 @@ class QdrantVectorProvider:
 				out[rid] = vec
 		return out
 
+	def fetch_vector(self, point_id: str) -> Optional[np.ndarray]:
+		point_id = str(point_id or "").strip()
+		if not point_id:
+			return None
+		vectors = self.fetch_vectors([point_id], batch_size=1)
+		return vectors.get(point_id)
+
+
+def compute_cosine_for_article_ids(
+	vector_provider: QdrantVectorProvider,
+	id1: str,
+	id2: str,
+) -> Tuple[float, bool, bool]:
+	left_id = str(id1 or "").strip()
+	right_id = str(id2 or "").strip()
+	if not left_id or not right_id:
+		raise ValueError("Both id1 and id2 must be provided")
+
+	vectors = vector_provider.fetch_vectors([left_id, right_id], batch_size=2)
+	v1 = vectors.get(left_id)
+	v2 = vectors.get(right_id)
+	if v1 is None or v2 is None:
+		return 0.0, (v1 is not None), (v2 is not None)
+
+	cos = float(np.dot(v1, v2))
+	return cos, True, True
+
 
 @dataclass
 class ClusterStats:
@@ -504,7 +531,7 @@ def main() -> int:
 	parser = argparse.ArgumentParser(description="Rerank retrieval candidates from PostgreSQL with semantic post-rerank clustering")
 	parser.add_argument("--db-url", default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/pfe_news"))
 	parser.add_argument("--table", choices=["retrieval_hits", "dedup_hits"], default="retrieval_hits")
-	parser.add_argument("--retrieval-run-id", "--run-id", dest="run_id", type=int, required=True)
+	parser.add_argument("--retrieval-run-id", "--run-id", dest="run_id", type=int, required=False)
 	parser.add_argument("--model", default=core.DEFAULT_MODEL)
 	parser.add_argument("--max-length", type=int, default=1024)
 	parser.add_argument("--batch-size", type=int, default=1)
@@ -514,9 +541,44 @@ def main() -> int:
 	parser.add_argument("--qdrant-collection", default="news_dense")
 	parser.add_argument("--embedding-sim-threshold", type=float, default=0.86)
 	parser.add_argument("--pool-chunk-size", type=int, default=80)
+	parser.add_argument("--id1", default=None, help="Article ID #1 for cosine similarity check using existing Qdrant vectors")
+	parser.add_argument("--id2", default=None, help="Article ID #2 for cosine similarity check using existing Qdrant vectors")
 	parser.add_argument("--instruction", default=DEFAULT_INSTRUCTION)
 	parser.add_argument("--hydrate", action="store_true", help="Attach full article from PostgreSQL articles table")
 	args = parser.parse_args()
+
+	if args.id1 or args.id2:
+		if not args.id1 or not args.id2:
+			raise RuntimeError("When using similarity tool, provide both --id1 and --id2")
+		vector_provider = QdrantVectorProvider(
+			url=str(args.qdrant_url),
+			collection=str(args.qdrant_collection),
+		)
+		cos, found1, found2 = compute_cosine_for_article_ids(
+			vector_provider=vector_provider,
+			id1=str(args.id1),
+			id2=str(args.id2),
+		)
+		if not found1 or not found2:
+			print(
+				"[rerank:cosine] lookup | "
+				f"id1_found={found1} id2_found={found2} collection={args.qdrant_collection}"
+			)
+			if not found1:
+				print(f"[rerank:cosine] missing point for id1={args.id1}")
+			if not found2:
+				print(f"[rerank:cosine] missing point for id2={args.id2}")
+			return 2
+
+		print(
+			"[rerank:cosine] similarity | "
+			f"id1={args.id1} id2={args.id2} cosine={cos:.6f} "
+			f"qdrant_collection={args.qdrant_collection}"
+		)
+		return 0
+
+	if args.run_id is None:
+		raise RuntimeError("--run-id is required unless using --id1/--id2 cosine mode")
 
 	store = PostgresStore(args.db_url)
 	store.init_db()
