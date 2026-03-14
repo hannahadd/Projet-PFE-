@@ -182,7 +182,7 @@ python main/writing.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --model qwen3.5:9b-q4_K_M \
   --interest-batch-size 10 --offset 0 --top_n 10 \
-  --rerank-run-id 2
+  --rerank-run-id 12
 
 
 # 9) Batch suivant (10 intérêts suivants)
@@ -326,14 +326,14 @@ piste pour ameliorer dedup : https://chatgpt.com/share/69ae2ef6-1b50-8001-a569-d
 /home/pfe/Documents/PFE/.venv312/bin/python main/reranker.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --table dedup_hits \
-  --run-id 1 \
-  --topn 10 --hydrate
+  --run-id 2 \
+  --topn 15 --hydrate
 
 # eval dedup :
 /home/pfe/Documents/PFE/.venv312/bin/python main/ingestiontable/eval.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --table dedup_hits \
-  --run-id 1 \
+  --run-id 2 \
   --eval-file main/ingestiontable/evalarticles/evalarticles.json
 
 ensuite tu fais un writing normal
@@ -347,6 +347,15 @@ regarde si les artcles parle de la meme chose ou non
 
 
 aussi side quest, supprime tout les interest français dans la base de donnée, dans rerank_hit, dans retrieval_hit aussi
+
+
+python main/reranker.py \
+  --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
+  --table dedup_hits \
+  --run-id 2 \
+  --topn 10 \
+  --hydrate \
+  --diversity-scan-k 80
 
 
 
