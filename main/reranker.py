@@ -46,6 +46,15 @@ _NAV_PATTERNS = [
 	r"^\s*(world|politics|business|technology|sports|opinion|video|podcast)\s*$",
 ]
 
+_NOISE_PHRASES = [
+	r"stay up to date with notifications",
+	r"notifications can be managed",
+	r"jump to content",
+	r"sign up to our newsletters",
+	r"log in register",
+	r"all rights reserved",
+]
+
 
 @dataclass
 class PairwiseDoc:
@@ -124,6 +133,9 @@ def _repair_broken_words(text: str) -> str:
 	t = t.replace("\\\n", "")
 	t = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", t, flags=re.UNICODE)
 	t = re.sub(r"([a-zà-ÿ])\s*\n\s*([a-zà-ÿ])", r"\1\2", t, flags=re.IGNORECASE)
+	t = re.sub(r"([a-zà-ÿ])([A-Z])", r"\1 \2", t)
+	for pat in _NOISE_PHRASES:
+		t = re.sub(pat, " ", t, flags=re.IGNORECASE)
 	t = t.replace("\n", " ")
 	t = re.sub(r"\s+", " ", t)
 	return t
@@ -133,13 +145,48 @@ def _segment_text(text: str) -> List[str]:
 	t = str(text or "")
 	if not t:
 		return []
-	parts = re.split(r"(?<=[.!?;:])\s+|\s+[|/>]{1,}\s+|\s+-\s+", t)
+	parts = re.split(
+		r"(?<=[.!?;:])\s+|\s+[|/>]{1,}\s+|\s+-\s+|(?<=[a-zà-ÿ0-9])(?=[A-Z])|\s*·\s*",
+		t,
+	)
 	segments: List[str] = []
 	for p in parts:
 		s = re.sub(r"\s+", " ", p).strip(" -|/>")
 		if s:
 			segments.append(s)
 	return segments
+
+
+def _body_candidates(hit: Dict[str, Any]) -> List[str]:
+	payload = hit.get("payload") or {}
+	full = hit.get("full_article") or {}
+	keys = ("canonical_text", "text", "content", "body")
+	out: List[str] = []
+	seen: set[str] = set()
+	for src in (full, payload):
+		if not isinstance(src, dict):
+			continue
+		for key in keys:
+			v = str(src.get(key) or "").strip()
+			if not v:
+				continue
+			n = re.sub(r"\s+", " ", v).strip().casefold()
+			if n in seen:
+				continue
+			seen.add(n)
+			out.append(v)
+	return out
+
+
+def _cleaned_body_quality(text: str, title: str) -> float:
+	if not text:
+		return -1e9
+	wc = _word_count(text)
+	if wc <= 0:
+		return -1e9
+	nav_pen = _nav_word_ratio(text) * 50.0
+	overlap = len(_title_token_set(title) & set(_tokens(text)))
+	return float(wc) + (2.0 * float(overlap)) - nav_pen
 
 
 def _segment_bonus_score(seg: str, title_tokens: set[str]) -> float:
@@ -235,7 +282,17 @@ def _extract_pairwise_doc_text(hit: Dict[str, Any], pairwise_denoise: bool = Tru
 	summary = _pick_text(hit, "summary", "description", "excerpt").strip()
 	body = _pick_text(hit, "canonical_text", "text", "content", "body").strip()
 	if pairwise_denoise:
-		lead = _pairwise_denoise_body(title=title, summary=summary, body=body, max_chars=PAIRWISE_BODY_CHARS)
+		best_lead = ""
+		best_quality = -1e9
+		for cand_body in _body_candidates(hit):
+			cand_lead = _pairwise_denoise_body(title=title, summary=summary, body=cand_body, max_chars=PAIRWISE_BODY_CHARS)
+			q = _cleaned_body_quality(cand_lead, title=title)
+			if q > best_quality:
+				best_quality = q
+				best_lead = cand_lead
+		lead = best_lead
+		if not lead:
+			lead = _pairwise_denoise_body(title=title, summary=summary, body=body, max_chars=PAIRWISE_BODY_CHARS)
 	else:
 		lead = body[:PAIRWISE_BODY_CHARS].strip()
 
@@ -310,6 +367,73 @@ def _hit_from_article_row(article: Dict[str, Any]) -> Dict[str, Any]:
 		"fingerprint": article.get("fingerprint") or "",
 		"lang": article.get("lang") or "",
 	}
+
+
+def _article_id_from_hit(hit: Dict[str, Any]) -> str:
+	payload = hit.get("payload") or {}
+	return str(hit.get("id") or payload.get("article_id") or "").strip()
+
+
+def _load_manual_hits_from_source(
+	store: PostgresStore,
+	table: str,
+	run_id: int,
+	id1: str,
+	id2: str,
+	manual_interest: Optional[str],
+	hydrate: bool,
+) -> Optional[tuple[Dict[str, Any], Dict[str, Any], str]]:
+	if table == "retrieval_hits":
+		blocks = store.fetch_retrieval_blocks(run_id)
+	else:
+		blocks = store.fetch_dedup_blocks(run_id)
+
+	interest_filter = str(manual_interest or "").strip().casefold()
+	matches: Dict[str, List[tuple[str, Dict[str, Any]]]] = {str(id1): [], str(id2): []}
+	for block in blocks:
+		interest = str(block.get("interest") or "").strip()
+		if interest_filter and interest.casefold() != interest_filter:
+			continue
+		for h in block.get("hits") or []:
+			hit_id = _article_id_from_hit(h)
+			if hit_id == str(id1):
+				matches[str(id1)].append((interest, dict(h)))
+			elif hit_id == str(id2):
+				matches[str(id2)].append((interest, dict(h)))
+
+	left = matches[str(id1)]
+	right = matches[str(id2)]
+	if not left or not right:
+		return None
+
+	left_by_interest = {interest: hit for interest, hit in left}
+	right_by_interest = {interest: hit for interest, hit in right}
+	common_interests = sorted(set(left_by_interest.keys()) & set(right_by_interest.keys()))
+	if not common_interests:
+		return None
+
+	if interest_filter:
+		picked_interest = next((i for i in common_interests if i.casefold() == interest_filter), None)
+		if picked_interest is None:
+			return None
+	else:
+		if len(common_interests) != 1:
+			raise RuntimeError(
+				"Manual source mode is ambiguous: the two IDs co-occur in multiple interests. "
+				f"Please pass --manual-interest. interests={common_interests}"
+			)
+		picked_interest = common_interests[0]
+
+	h1 = left_by_interest[picked_interest]
+	h2 = right_by_interest[picked_interest]
+	if hydrate:
+		for h in (h1, h2):
+			payload = h.get("payload") or {}
+			art = store.find_article(article_id=h.get("id") or payload.get("article_id"), url=payload.get("url"))
+			if art is not None:
+				h["full_article"] = art
+
+	return h1, h2, picked_interest
 	return {
 		"id": article.get("id"),
 		"rank": 1,
@@ -323,7 +447,13 @@ def run_manual_pairwise_judge(
 	reranker: Any,
 	id1: str,
 	id2: str,
+	source_table: Optional[str],
+	source_run_id: Optional[int],
+	manual_interest: Optional[str],
+	hydrate: bool,
 	threshold: float,
+	smaxtreshold: Optional[float],
+	smintreshold: Optional[float],
 	pairwise_batch_size: int,
 	pairwise_denoise: bool,
 ) -> int:
@@ -332,25 +462,52 @@ def run_manual_pairwise_judge(
 	if not left_id or not right_id:
 		raise RuntimeError("Provide both --id1 and --id2 for manual judge mode")
 
-	a1 = store.find_article(article_id=left_id, url=None)
-	a2 = store.find_article(article_id=right_id, url=None)
-	if a1 is None or a2 is None:
-		print(
-			"[pairwise:manual] lookup | "
-			f"id1_found={a1 is not None} id2_found={a2 is not None}"
+	h1: Optional[Dict[str, Any]] = None
+	h2: Optional[Dict[str, Any]] = None
+	mode_label = "articles"
+	picked_interest: Optional[str] = None
+	if source_table is not None and source_run_id is not None:
+		loaded = _load_manual_hits_from_source(
+			store=store,
+			table=source_table,
+			run_id=int(source_run_id),
+			id1=left_id,
+			id2=right_id,
+			manual_interest=manual_interest,
+			hydrate=hydrate,
 		)
-		if a1 is None:
-			print(f"[pairwise:manual] missing article for id1={left_id}")
-		if a2 is None:
-			print(f"[pairwise:manual] missing article for id2={right_id}")
-		return 2
+		if loaded is not None:
+			h1, h2, picked_interest = loaded
+			mode_label = f"{source_table}:run={int(source_run_id)}"
 
-	h1 = _hit_from_article_row(a1)
-	h2 = _hit_from_article_row(a2)
+	if h1 is None or h2 is None:
+		a1 = store.find_article(article_id=left_id, url=None)
+		a2 = store.find_article(article_id=right_id, url=None)
+		if a1 is None or a2 is None:
+			print(
+				"[pairwise:manual] lookup | "
+				f"id1_found={a1 is not None} id2_found={a2 is not None}"
+			)
+			if a1 is None:
+				print(f"[pairwise:manual] missing article for id1={left_id}")
+			if a2 is None:
+				print(f"[pairwise:manual] missing article for id2={right_id}")
+			return 2
+		h1 = _hit_from_article_row(a1)
+		h2 = _hit_from_article_row(a2)
+		mode_label = "articles"
+
 	doc1 = _extract_pairwise_doc_text(h1, pairwise_denoise=pairwise_denoise)
 	doc2 = _extract_pairwise_doc_text(h2, pairwise_denoise=pairwise_denoise)
 	prompt_ab = _build_pairwise_prompt(doc1, doc2)
 	prompt_ba = _build_pairwise_prompt(doc2, doc1)
+	print(
+		"[pairwise:manual] source | "
+		f"mode={mode_label}"
+		f" manual_interest={manual_interest if manual_interest else 'None'}"
+		f" picked_interest={picked_interest if picked_interest else 'None'}"
+		f" hydrate={hydrate}"
+	)
 
 	print("[pairwise:manual] ----- DOC A -----")
 	print(doc1)
@@ -365,12 +522,21 @@ def run_manual_pairwise_judge(
 	s_ab = float(scores[0]) if len(scores) >= 1 else 0.0
 	s_ba = float(scores[1]) if len(scores) >= 2 else s_ab
 	score = float((s_ab + s_ba) / 2.0)
-	verdict = "yes" if score >= float(threshold) else "no"
+	s_max = max(s_ab, s_ba)
+	s_min = min(s_ab, s_ba)
+	use_dual = (smaxtreshold is not None) and (smintreshold is not None)
+	is_yes = score >= float(threshold)
+	if (not is_yes) and use_dual:
+		is_yes = (s_max >= float(smaxtreshold)) and (s_min >= float(smintreshold))
+	verdict = "yes" if is_yes else "no"
 
 	print(
 		"[pairwise:manual] result | "
 		f"id1={left_id} id2={right_id} score_ab={s_ab:.6f} score_ba={s_ba:.6f} avg_score={score:.6f} "
-		f"threshold={float(threshold):.3f} pairwise_denoise={pairwise_denoise} same_story={verdict}"
+		f"s_max={s_max:.6f} s_min={s_min:.6f} threshold={float(threshold):.3f} "
+		f"smaxtreshold={smaxtreshold if smaxtreshold is not None else 'None'} "
+		f"smintreshold={smintreshold if smintreshold is not None else 'None'} "
+		f"pairwise_denoise={pairwise_denoise} same_story={verdict}"
 	)
 	return 0
 
@@ -379,6 +545,8 @@ def _greedy_pairwise_keep(
 	docs: List[PairwiseDoc],
 	reranker: Any,
 	pairwise_threshold: float,
+	smaxtreshold: Optional[float],
+	smintreshold: Optional[float],
 	pairwise_batch_size: int,
 	interest: str,
 	target: int,
@@ -387,6 +555,7 @@ def _greedy_pairwise_keep(
 		return [], {}, 0, 0
 
 	threshold = float(pairwise_threshold)
+	use_dual = (smaxtreshold is not None) and (smintreshold is not None)
 	kept: List[PairwiseDoc] = [docs[0]]
 	reason_counts: Counter[str] = Counter()
 	comparisons = 0
@@ -416,14 +585,20 @@ def _greedy_pairwise_keep(
 			s_ab = float(scores[2 * idx_prev])
 			s_ba = float(scores[2 * idx_prev + 1])
 			pair_avg = (s_ab + s_ba) / 2.0
+			s_max = max(s_ab, s_ba)
+			s_min = min(s_ab, s_ba)
 			comparisons += 1
 			if pair_avg >= threshold:
 				is_same_story = True
+				reason_counts[f"pairwise_avg>={threshold:.2f}"] += 1
+				break
+			if use_dual and (s_max >= float(smaxtreshold)) and (s_min >= float(smintreshold)):
+				is_same_story = True
+				reason_counts[f"pairwise_max>={float(smaxtreshold):.2f}_min>={float(smintreshold):.2f}"] += 1
 				break
 
 		if is_same_story:
 			rejected += 1
-			reason_counts[f"pairwise_yes>={threshold:.2f}"] += 1
 			continue
 
 		kept.append(cand)
@@ -438,6 +613,8 @@ def collapse_reranked_hits_pairwise(
 	diversity_scan_k: int,
 	reranker: Any,
 	pairwise_threshold: float,
+	smaxtreshold: Optional[float],
+	smintreshold: Optional[float],
 	pairwise_batch_size: int,
 	pairwise_denoise: bool,
 ) -> List[Dict[str, Any]]:
@@ -455,6 +632,8 @@ def collapse_reranked_hits_pairwise(
 		docs=docs,
 		reranker=reranker,
 		pairwise_threshold=pairwise_threshold,
+		smaxtreshold=smaxtreshold,
+		smintreshold=smintreshold,
 		pairwise_batch_size=pairwise_batch_size,
 		interest=interest,
 		target=target,
@@ -489,9 +668,12 @@ def main() -> int:
 	parser.add_argument("--batch-size", type=int, default=1)
 	parser.add_argument("--pairwise-batch-size", type=int, default=2)
 	parser.add_argument("--pairwise-threshold", type=float, default=0.62)
+	parser.add_argument("--smaxtreshold", "--smax-threshold", type=float, default=None)
+	parser.add_argument("--smintreshold", "--smin-threshold", type=float, default=None)
 	parser.add_argument("--pairwise-denoise", action=argparse.BooleanOptionalAction, default=True)
 	parser.add_argument("--id1", default=None, help="Manual pairwise judge: article_id #1")
 	parser.add_argument("--id2", default=None, help="Manual pairwise judge: article_id #2")
+	parser.add_argument("--manual-interest", default=None, help="Manual pairwise judge: constrain lookup to one interest when using --table/--run-id")
 	parser.add_argument("--topn", type=int, default=20, help="Final top-N kept after rerank + pairwise clustering")
 	parser.add_argument("--diversity-scan-k", type=int, default=80, help="Top reranked pool size used for pairwise clustering")
 	parser.add_argument("--instruction", default=DEFAULT_INSTRUCTION)
@@ -513,7 +695,13 @@ def main() -> int:
 			reranker=reranker,
 			id1=str(args.id1 or ""),
 			id2=str(args.id2 or ""),
+			source_table=(str(args.table) if args.run_id is not None else None),
+			source_run_id=(int(args.run_id) if args.run_id is not None else None),
+			manual_interest=(str(args.manual_interest) if args.manual_interest else None),
+			hydrate=bool(args.hydrate),
 			threshold=float(args.pairwise_threshold),
+			smaxtreshold=(float(args.smaxtreshold) if args.smaxtreshold is not None else None),
+			smintreshold=(float(args.smintreshold) if args.smintreshold is not None else None),
 			pairwise_batch_size=max(1, int(args.pairwise_batch_size)),
 			pairwise_denoise=bool(args.pairwise_denoise),
 		)
@@ -574,6 +762,8 @@ def main() -> int:
 			diversity_scan_k=max(int(args.topn), int(args.diversity_scan_k)),
 			reranker=reranker,
 			pairwise_threshold=float(args.pairwise_threshold),
+			smaxtreshold=(float(args.smaxtreshold) if args.smaxtreshold is not None else None),
+			smintreshold=(float(args.smintreshold) if args.smintreshold is not None else None),
 			pairwise_batch_size=max(1, int(args.pairwise_batch_size)),
 			pairwise_denoise=bool(args.pairwise_denoise),
 		)
@@ -599,6 +789,8 @@ def main() -> int:
 				"selection_method": "greedy_compare_with_kept_only",
 				"pairwise_model": str(args.model),
 				"pairwise_threshold": float(args.pairwise_threshold),
+				"smaxtreshold": (float(args.smaxtreshold) if args.smaxtreshold is not None else None),
+				"smintreshold": (float(args.smintreshold) if args.smintreshold is not None else None),
 				"pairwise_denoise": bool(args.pairwise_denoise),
 				"pairwise_direction": "bidirectional_mean",
 				"pairwise_body_chars": int(PAIRWISE_BODY_CHARS),
