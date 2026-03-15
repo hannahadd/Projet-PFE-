@@ -162,6 +162,13 @@ def _build_aggregate_query_specs(
     return core.merge_query_specs(specs)
 
 
+def _resolve_default_interests() -> List[str]:
+    from_expansions = [str(k).strip() for k in INTEREST_EXPANSIONS.keys() if str(k).strip()]
+    if from_expansions:
+        return from_expansions
+    return list(DEFAULT_INTERESTS)
+
+
 def _resolve_retrieval_parameters(args: argparse.Namespace) -> Dict[str, int]:
     dense_per_anchor = int(
         args.dense_per_anchor
@@ -447,7 +454,8 @@ def main() -> int:
 
     interests = [i for i in (args.interest or []) if i and i.strip()]
     if not interests:
-        interests = list(DEFAULT_INTERESTS)
+        interests = _resolve_default_interests()
+        print(f"No --interest provided. Using all configured interests: {len(interests)}")
 
     lang_filter = None
     if args.lang:
