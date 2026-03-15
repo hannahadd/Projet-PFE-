@@ -588,7 +588,6 @@ def deduplicate_interest_hits(
 	raw_hits: List[Dict[str, Any]],
 	interest: str,
 	source_run_id: int,
-	stage3_cfg: Optional[Stage3Config] = None,
 	stage2_max_candidates: int = 120,
 ) -> List[Dict[str, Any]]:
 	prepared = [prepare_hit(hit, interest=interest, source_run_id=source_run_id) for hit in raw_hits]
@@ -598,32 +597,21 @@ def deduplicate_interest_hits(
 	stage1 = run_dedup_stage(prepared, is_simple_duplicate, "deduplication simple", interest)
 	stage2 = run_dedup_stage2_blocking(stage1, interest=interest, max_candidates=stage2_max_candidates)
 
-	cfg = stage3_cfg or Stage3Config()
-	finder = QdrantNeighborFinder(cfg)
-	stage3 = run_dedup_stage3_qdrant(stage2, interest=interest, finder=finder, cfg=cfg)
-
-	print(f"[dedup:{interest}] done | final_hits={len(stage3)}")
-	return build_output_hits(stage3)
+	print(f"[dedup:{interest}] done | final_hits={len(stage2)}")
+	return build_output_hits(stage2)
 
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Deduplicate latest retrieval hits per interest and store them in PostgreSQL")
 	parser.add_argument("--db-url", default="postgresql://postgres:postgres@localhost:5432/pfe_news")
 	parser.add_argument("--interest", "--interet", dest="interests", action="append", default=None)
-	parser.add_argument("--qdrant-url", default="http://localhost:6333")
-	parser.add_argument("--qdrant-collection", default="news_dense")
 	parser.add_argument("--stage2-max-candidates", type=int, default=120)
-	parser.add_argument("--stage3-topk", type=int, default=40)
-	parser.add_argument("--stage3-max-candidates", type=int, default=32)
-	parser.add_argument("--stage3-fallback-candidates", type=int, default=24)
-	parser.add_argument("--stage3-date-window-days", type=int, default=3)
-	parser.add_argument("--stage3-no-lang-filter", action="store_true")
 	return parser.parse_args()
 
 
 def main() -> int:
 	args = parse_args()
-	_require_dependencies(require_qdrant=True)
+	_require_dependencies(require_qdrant=False)
 
 	store = PostgresStore(args.db_url)
 	store.init_db()
@@ -637,16 +625,6 @@ def main() -> int:
 	for interest, run_id in latest_by_interest.items():
 		print(f"[dedup] selected latest retrieval run | interest={interest} retrieval_run_id={run_id}")
 
-	stage3_cfg = Stage3Config(
-		qdrant_url=str(args.qdrant_url),
-		qdrant_collection=str(args.qdrant_collection),
-		top_k=max(1, int(args.stage3_topk)),
-		max_intersection_candidates=max(1, int(args.stage3_max_candidates)),
-		fallback_candidates=max(1, int(args.stage3_fallback_candidates)),
-		date_window_days=max(0, int(args.stage3_date_window_days)),
-		use_lang_filter=not bool(args.stage3_no_lang_filter),
-	)
-
 	representative_retrieval_run_id = max(latest_by_interest.values())
 	dedup_run_id = store.create_dedup_run(
 		{
@@ -658,17 +636,7 @@ def main() -> int:
 				"stages": [
 					"simple_text_duplicate",
 					"near_text_duplicate_blocking_rapidfuzz",
-					"same_story_qdrant_neighbors",
 				],
-				"qdrant": {
-					"url": stage3_cfg.qdrant_url,
-					"collection": stage3_cfg.qdrant_collection,
-					"top_k": stage3_cfg.top_k,
-					"max_intersection_candidates": stage3_cfg.max_intersection_candidates,
-					"fallback_candidates": stage3_cfg.fallback_candidates,
-					"date_window_days": stage3_cfg.date_window_days,
-					"use_lang_filter": stage3_cfg.use_lang_filter,
-				},
 				"stage2": {"max_candidates": max(1, int(args.stage2_max_candidates))},
 			},
 		}
@@ -686,7 +654,6 @@ def main() -> int:
 			block.get("hits") or [],
 			interest=interest,
 			source_run_id=run_id,
-			stage3_cfg=stage3_cfg,
 			stage2_max_candidates=max(1, int(args.stage2_max_candidates)),
 		)
 		out_blocks.append({"interest": interest, "n": len(dedup_hits), "hits": dedup_hits})

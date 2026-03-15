@@ -389,6 +389,13 @@ python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/p
 -----------------------------------------------------------------------------------------------------
 New command 
 
+
+# 5) recuperation des articles :
+python main/ingestiontable/ccnews/ccnewsdownload.py  --je me souviens plus des parametre, sujrment juste la date
+python main/ingestiontable/ccnews/parse_ccnews_day.py  --je me souviens plus des parametre, sujrment juste la date
++
+ton code a toi a remplir 
+
 # 5) Normaliser et charger les articles en DB
 python main/ingestiontable/Normalisation_dataset.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --in ccnews_warc_by_day/20260211json   --in main/ingestiontable/dataset_top20.csv --chunk-size 1000 --batch-size 1000
 
@@ -456,6 +463,7 @@ http://127.0.0.1:8088/show-data
 # expand module
 
 /home/pfe/Documents/PFE/.venv312/bin/python main/expandmodule/generate_expansions.py   --model qwen3.5:9b-q4_K_M   --count 10 --min-words 1 --max-words 2   --out-dir main/expandmodule/interest   --topic "war and international conflict"   --topic "SpaceX"   --topic "Apple"   --topic "AI and LLMs"   --topic "french politics"
+
 
 # start docker 
 
