@@ -386,7 +386,7 @@ python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/p
 
 
 
------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------
 New command 
 
 
@@ -400,7 +400,7 @@ ton code a toi a remplir
 python main/ingestiontable/Normalisation_dataset.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --in ccnews_warc_by_day/20260211json   --in main/ingestiontable/dataset_top20.csv --chunk-size 1000 --batch-size 1000
 
 # new retrieval call
-python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --topk 1300   --max-expansions-per-interest 10   --dense-per-anchor 600   --dense-per-expansion 250   --bm25-title-k 150   --bm25-body-k 300   --rrf-k 60   --candidate-cap 2500   --min-sim 0.0   --min-bm25 0.0
+python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --topk 1300   --max-expansions-per-interest 10   --dense-per-anchor 600   --dense-per-expansion 250   --bm25-title-k 150   --bm25-body-k 300   --rrf-k 60   --candidate-cap 2500   --min-sim 0.0   --min-bm25 0.0 --interest finance
 
 (n'y touche pas et surtout pas de flag --reindex, ça dure 2h30)
 
@@ -412,14 +412,14 @@ python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:543
 
 /home/pfe/Documents/PFE/.venv312/bin/python main/depuplication.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
-  --interest "AI and LLMs"
+  --interest "finance"
 
 
 # new rerank with diversity
-python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --table dedup_hits --run-id 2 --topn 10 --diversity-scan-k 80 --pairwise-threshold 0.62 --smaxtreshold 0.70 --smintreshold 0.35 --pairwise-batch-size 2 --hydrate
+python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --table dedup_hits --run-id 4 --topn 10 --diversity-scan-k 80 --pairwise-threshold 0.62 --smaxtreshold 0.70 --smintreshold 0.35 --pairwise-batch-size 2 --hydrate
 
 # writing
-python main/writing.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --model qwen3.5:9b-q4_K_M   --interest-batch-size 10 --offset 0 --top_n 10   --rerank-run-id 20
+python main/writing.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --model qwen3.5:9b-q4_K_M   --interest-batch-size 10 --offset 0 --top_n 10   --rerank-run-id 23
 
 
 ---------------------------------------------------
