@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -29,13 +30,21 @@ def _load_src_reranker_module():
 core = _load_src_reranker_module()
 DEFAULT_INSTRUCTION = core.DEFAULT_INSTRUCTION
 DEFAULT_PAIRWISE_INSTRUCTION = (
-	"Given a reference news article and a candidate news article, answer yes only if they report "
-	"the same specific real-world news event or announcement. Treat different outlet framing, "
-	"different wording, translations, and consequence-focused headlines as the same story when "
-	"the underlying event is the same. Answer no for merely related topics, background, analysis, "
-	"or follow-up commentary about a broader subject."
+    "Given two news articles, answer yes if they should be merged into the same "
+    "news-feed cluster. Treat different wording, outlet framing, translations, "
+    "roundups, and minor follow-up updates as the same cluster when the main event, "
+    "product update, rumor cycle, launch window, or announcement is essentially the same. "
+    "Answer no only if they deserve separate feed slots because the main focus/event differs."
 )
 PAIRWISE_BODY_CHARS = 600
+
+_NAV_PATTERNS = [
+	r"\b(home|menu|navigation|breadcrumb|section|category|categories|tag|tags)\b",
+	r"\b(sign in|login|log in|subscribe|newsletter|cookie|privacy|terms|contact|about us)\b",
+	r"\b(share|follow us|read more|related|recommended|trending|latest news|breaking)\b",
+	r"\b(advertisement|sponsored|©|all rights reserved)\b",
+	r"^\s*(world|politics|business|technology|sports|opinion|video|podcast)\s*$",
+]
 
 
 @dataclass
@@ -61,19 +70,185 @@ def _pick_text(hit: Dict[str, Any], *keys: str) -> str:
 	return ""
 
 
-def _extract_pairwise_doc_text(hit: Dict[str, Any]) -> str:
+def _word_count(text: str) -> int:
+	return len(re.findall(r"\b\w+\b", text or "", flags=re.UNICODE))
+
+
+def _tokens(text: str) -> List[str]:
+	return [t.casefold() for t in re.findall(r"\b[\w'-]+\b", text or "", flags=re.UNICODE)]
+
+
+def _title_token_set(title: str) -> set[str]:
+	toks = [t for t in _tokens(title) if len(t) >= 3]
+	return set(toks)
+
+
+def _mostly_symbols(text: str) -> bool:
+	raw = (text or "").strip()
+	if not raw:
+		return True
+	alnum = sum(1 for ch in raw if ch.isalnum())
+	non_space = sum(1 for ch in raw if not ch.isspace())
+	if non_space == 0:
+		return True
+	return (alnum / float(non_space)) < 0.45
+
+
+def _looks_navigation_like(text: str) -> bool:
+	line = (text or "").strip().casefold()
+	if not line:
+		return True
+	if line.count("|") >= 2 or line.count("/") >= 3 or line.count(">") >= 2:
+		return True
+	for pat in _NAV_PATTERNS:
+		if re.search(pat, line, flags=re.IGNORECASE):
+			return True
+	return False
+
+
+def _nav_word_ratio(text: str) -> float:
+	toks = _tokens(text)
+	if not toks:
+		return 1.0
+	nav_hits = 0
+	for tok in toks:
+		if tok in {"home", "menu", "navigation", "breadcrumb", "category", "categories", "tags", "tag", "login", "subscribe", "privacy", "cookie", "contact", "about", "share", "related", "recommended", "trending"}:
+			nav_hits += 1
+	return nav_hits / float(len(toks))
+
+
+def _repair_broken_words(text: str) -> str:
+	t = str(text or "")
+	t = t.replace("\xa0", " ")
+	t = t.replace("\r\n", "\n").replace("\r", "\n")
+	t = t.replace("\\\n", "")
+	t = re.sub(r"(\w)-\s*\n\s*(\w)", r"\1\2", t, flags=re.UNICODE)
+	t = re.sub(r"([a-zà-ÿ])\s*\n\s*([a-zà-ÿ])", r"\1\2", t, flags=re.IGNORECASE)
+	t = t.replace("\n", " ")
+	t = re.sub(r"\s+", " ", t)
+	return t
+
+
+def _segment_text(text: str) -> List[str]:
+	t = str(text or "")
+	if not t:
+		return []
+	parts = re.split(r"(?<=[.!?;:])\s+|\s+[|/>]{1,}\s+|\s+-\s+", t)
+	segments: List[str] = []
+	for p in parts:
+		s = re.sub(r"\s+", " ", p).strip(" -|/>")
+		if s:
+			segments.append(s)
+	return segments
+
+
+def _segment_bonus_score(seg: str, title_tokens: set[str]) -> float:
+	s = seg.strip()
+	if not s:
+		return -10.0
+	wc = _word_count(s)
+	if wc < 6:
+		return -5.0
+	if not any(ch.islower() for ch in s):
+		return -3.0
+	if _looks_navigation_like(s):
+		return -4.0
+	if _mostly_symbols(s):
+		return -4.0
+	if _nav_word_ratio(s) >= 0.35:
+		return -3.0
+	if s.count(">") >= 2 or s.count("/") >= 3:
+		return -3.0
+
+	score = 0.0
+	seg_tokens = set(_tokens(s))
+	overlap = len(seg_tokens & title_tokens)
+	if overlap >= 1:
+		score += min(2.0, 0.7 * overlap)
+	if re.search(r"\b(19|20)\d{2}\b|\b\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?\b", s):
+		score += 0.7
+	if re.search(r"\b(announced|launch|launched|acquire|acquired|merge|merged|raises|raised|unveiled|introduced|approved|signed|released)\b", s, flags=re.IGNORECASE):
+		score += 0.9
+	if re.search(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b", s):
+		score += 0.4
+	if wc >= 10:
+		score += 0.4
+	return score
+
+
+def _pairwise_denoise_body(title: str, summary: str, body: str, max_chars: int) -> str:
+	raw = " ".join([summary or "", body or ""]).strip()
+	raw = _repair_broken_words(raw)
+	segments = _segment_text(raw)
+	if not segments:
+		return ""
+
+	title_norm = re.sub(r"\s+", " ", (title or "")).strip().casefold()
+	tokens_title = _title_token_set(title)
+	seen: set[str] = set()
+	scored: List[tuple[int, str, float]] = []
+
+	for idx, seg in enumerate(segments):
+		s = re.sub(r"\s+", " ", seg).strip()
+		if not s:
+			continue
+		n = s.casefold()
+		if n in seen:
+			continue
+		seen.add(n)
+		if n == title_norm or (title_norm and title_norm in n and _word_count(s) <= 8):
+			continue
+		score = _segment_bonus_score(s, tokens_title)
+		if score < 0:
+			continue
+		scored.append((idx, s, score))
+
+	if not scored:
+		return ""
+
+	# keep top segments by score, then restore original order
+	scored_sorted = sorted(scored, key=lambda x: (-x[2], x[0]))
+	top_k = min(5, max(2, len(scored_sorted)))
+	chosen = scored_sorted[:top_k]
+	chosen = sorted(chosen, key=lambda x: x[0])
+
+	cleaned = " ".join(seg for _, seg, _ in chosen).strip()
+	cleaned = re.sub(r"\s+", " ", cleaned).strip()
+	if len(cleaned) > 700:
+		cleaned = cleaned[:700].rsplit(" ", 1)[0].strip()
+	if len(cleaned) < 400 and len(scored_sorted) > top_k:
+		for _, seg, _ in sorted(scored_sorted[top_k:], key=lambda x: x[0]):
+			if len(cleaned) >= 400:
+				break
+			cand = (cleaned + " " + seg).strip()
+			if len(cand) > 700:
+				break
+			cleaned = cand
+
+	if _word_count(cleaned) < 12:
+		return ""
+	return cleaned
+
+
+def _extract_pairwise_doc_text(hit: Dict[str, Any], pairwise_denoise: bool = True) -> str:
 	title = _pick_text(hit, "title").strip()
 	summary = _pick_text(hit, "summary", "description", "excerpt").strip()
 	body = _pick_text(hit, "canonical_text", "text", "content", "body").strip()
-	lead = body[:PAIRWISE_BODY_CHARS].strip()
+	if pairwise_denoise:
+		lead = _pairwise_denoise_body(title=title, summary=summary, body=body, max_chars=PAIRWISE_BODY_CHARS)
+	else:
+		lead = body[:PAIRWISE_BODY_CHARS].strip()
 
 	parts: List[str] = []
 	if title:
 		parts.append(f"TITLE: {title}")
-	if summary:
+	if summary and not pairwise_denoise:
 		parts.append(f"SUMMARY: {summary}")
 	if lead:
 		parts.append(f"BODY: {lead}")
+	if pairwise_denoise and len(lead) < 120 and title:
+		# fallback title-only when body is too poor after denoise
+		return f"TITLE: {title}"
 	if not parts:
 		url = _pick_text(hit, "url").strip()
 		if url:
@@ -83,11 +258,13 @@ def _extract_pairwise_doc_text(hit: Dict[str, Any]) -> str:
 
 def _build_pairwise_prompt(doc_a: str, doc_b: str) -> str:
 	query = (
-		"Reference news article:\n"
-		f"{doc_a}\n\n"
-		"Task: retrieve documents about the same specific news event or announcement. "
-		"Different outlet framing is allowed if the underlying event is the same."
-	)
+        "Reference news article:\n"
+        f"{doc_a}\n\n"
+        "Task: decide whether a candidate article should be merged into the same news-feed cluster. "
+        "Answer yes if the two articles are about essentially the same main event, product update, "
+        "rumor cycle, launch window, or announcement, even if wording, language, outlet framing, "
+        "or minor details differ."
+    )
 	return core.format_instruction(DEFAULT_PAIRWISE_INSTRUCTION, query, doc_b)
 
 
@@ -107,7 +284,7 @@ def _pairwise_score_bidirectional(
 	return float((float(scores[0]) + float(scores[1])) / 2.0)
 
 
-def _prepare_pairwise_docs(sorted_hits: List[Dict[str, Any]]) -> List[PairwiseDoc]:
+def _prepare_pairwise_docs(sorted_hits: List[Dict[str, Any]], pairwise_denoise: bool = True) -> List[PairwiseDoc]:
 	docs: List[PairwiseDoc] = []
 	for i, hit in enumerate(sorted_hits):
 		docs.append(
@@ -116,7 +293,7 @@ def _prepare_pairwise_docs(sorted_hits: List[Dict[str, Any]]) -> List[PairwiseDo
 				sort_order=i,
 				rerank_score=float(hit.get("rerank_score") or 0.0),
 				dense_rank=int(hit.get("dense_rank") or hit.get("rank") or (i + 1)),
-				doc_text=_extract_pairwise_doc_text(hit),
+				doc_text=_extract_pairwise_doc_text(hit, pairwise_denoise=pairwise_denoise),
 			)
 		)
 	return docs
@@ -148,6 +325,7 @@ def run_manual_pairwise_judge(
 	id2: str,
 	threshold: float,
 	pairwise_batch_size: int,
+	pairwise_denoise: bool,
 ) -> int:
 	left_id = str(id1 or "").strip()
 	right_id = str(id2 or "").strip()
@@ -169,20 +347,30 @@ def run_manual_pairwise_judge(
 
 	h1 = _hit_from_article_row(a1)
 	h2 = _hit_from_article_row(a2)
-	doc1 = _extract_pairwise_doc_text(h1)
-	doc2 = _extract_pairwise_doc_text(h2)
-	score = _pairwise_score_bidirectional(
-		reranker=reranker,
-		doc_a=doc1,
-		doc_b=doc2,
-		batch_size=max(1, int(pairwise_batch_size)),
-	)
+	doc1 = _extract_pairwise_doc_text(h1, pairwise_denoise=pairwise_denoise)
+	doc2 = _extract_pairwise_doc_text(h2, pairwise_denoise=pairwise_denoise)
+	prompt_ab = _build_pairwise_prompt(doc1, doc2)
+	prompt_ba = _build_pairwise_prompt(doc2, doc1)
+
+	print("[pairwise:manual] ----- DOC A -----")
+	print(doc1)
+	print("[pairwise:manual] ----- DOC B -----")
+	print(doc2)
+	print("[pairwise:manual] ----- PROMPT A->B -----")
+	print(prompt_ab)
+	print("[pairwise:manual] ----- PROMPT B->A -----")
+	print(prompt_ba)
+
+	scores = reranker.score_pairs([prompt_ab, prompt_ba], batch_size=max(1, int(pairwise_batch_size)))
+	s_ab = float(scores[0]) if len(scores) >= 1 else 0.0
+	s_ba = float(scores[1]) if len(scores) >= 2 else s_ab
+	score = float((s_ab + s_ba) / 2.0)
 	verdict = "yes" if score >= float(threshold) else "no"
 
 	print(
 		"[pairwise:manual] result | "
-		f"id1={left_id} id2={right_id} score={score:.6f} "
-		f"threshold={float(threshold):.3f} same_story={verdict}"
+		f"id1={left_id} id2={right_id} score_ab={s_ab:.6f} score_ba={s_ba:.6f} avg_score={score:.6f} "
+		f"threshold={float(threshold):.3f} pairwise_denoise={pairwise_denoise} same_story={verdict}"
 	)
 	return 0
 
@@ -251,6 +439,7 @@ def collapse_reranked_hits_pairwise(
 	reranker: Any,
 	pairwise_threshold: float,
 	pairwise_batch_size: int,
+	pairwise_denoise: bool,
 ) -> List[Dict[str, Any]]:
 	if not hits:
 		return []
@@ -261,7 +450,7 @@ def collapse_reranked_hits_pairwise(
 	pool = sorted_hits[: min(len(sorted_hits), scan_k)]
 
 	print(f"[rerank:{interest}] pool created | input={len(hits)} pool={len(pool)}")
-	docs = _prepare_pairwise_docs(pool)
+	docs = _prepare_pairwise_docs(pool, pairwise_denoise=pairwise_denoise)
 	kept_docs, reasons, pair_checks, rejected = _greedy_pairwise_keep(
 		docs=docs,
 		reranker=reranker,
@@ -281,7 +470,7 @@ def collapse_reranked_hits_pairwise(
 	print(
 		f"[rerank:{interest}] post-rerank pairwise greedy fini | "
 		f"input={len(hits)} pool={len(pool)} comparisons={pair_checks} rejected={rejected} "
-		f"kept={len(kept_docs)} final={len(final_hits)}"
+		f"kept={len(kept_docs)} final={len(final_hits)} pairwise_denoise={pairwise_denoise}"
 	)
 	if reasons:
 		details = ", ".join(f"{k}:{v}" for k, v in sorted(reasons.items(), key=lambda x: (-x[1], x[0])))
@@ -300,6 +489,7 @@ def main() -> int:
 	parser.add_argument("--batch-size", type=int, default=1)
 	parser.add_argument("--pairwise-batch-size", type=int, default=2)
 	parser.add_argument("--pairwise-threshold", type=float, default=0.62)
+	parser.add_argument("--pairwise-denoise", action=argparse.BooleanOptionalAction, default=True)
 	parser.add_argument("--id1", default=None, help="Manual pairwise judge: article_id #1")
 	parser.add_argument("--id2", default=None, help="Manual pairwise judge: article_id #2")
 	parser.add_argument("--topn", type=int, default=20, help="Final top-N kept after rerank + pairwise clustering")
@@ -325,6 +515,7 @@ def main() -> int:
 			id2=str(args.id2 or ""),
 			threshold=float(args.pairwise_threshold),
 			pairwise_batch_size=max(1, int(args.pairwise_batch_size)),
+			pairwise_denoise=bool(args.pairwise_denoise),
 		)
 
 	if args.run_id is None:
@@ -384,6 +575,7 @@ def main() -> int:
 			reranker=reranker,
 			pairwise_threshold=float(args.pairwise_threshold),
 			pairwise_batch_size=max(1, int(args.pairwise_batch_size)),
+			pairwise_denoise=bool(args.pairwise_denoise),
 		)
 
 		out_blocks.append({"interest": interest, "n": len(final_hits), "hits": final_hits})
@@ -407,6 +599,7 @@ def main() -> int:
 				"selection_method": "greedy_compare_with_kept_only",
 				"pairwise_model": str(args.model),
 				"pairwise_threshold": float(args.pairwise_threshold),
+				"pairwise_denoise": bool(args.pairwise_denoise),
 				"pairwise_direction": "bidirectional_mean",
 				"pairwise_body_chars": int(PAIRWISE_BODY_CHARS),
 				"order": "rerank_desc",

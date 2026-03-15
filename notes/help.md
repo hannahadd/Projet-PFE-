@@ -372,7 +372,13 @@ python main/reranker.py --qdrant-url http://localhost:6333 --qdrant-collection n
 
 python main/reranker.py --qdrant-url http://localhost:6333 --qdrant-collection news_dense --id1 e33fc99d-109c-68e3-427d-ed9bd09123f4 --id2 d7f0c8b3-241d-36f4-2576-4644c60294cc
 
+
+pair spaceX merger
 python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --id1 119c743c-307c-f4ec-105b-cf80fe5a65a7 --id2 bcbce7d7-4fb0-337c-4ba0-edcbac6e1277 --pairwise-threshold 0.62 --pairwise-batch-size 1
+
+
+apple iphone 17e
+python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --id1 bcc53846-4c91-5d8a-a125-bc260afaabca --id2 d48750e3-33f6-95c8-8723-6eb68fc7d905 --pairwise-threshold 0.62 --pairwise-batch-size 1
 
 
 python main/reranker.py --db-url postgresql://postgres:postgres@localhost:5432/pfe_news --table dedup_hits --run-id 2 --topn 10 --diversity-scan-k 80 --pairwise-threshold 0.62 --pairwise-batch-size 2 --hydrate
