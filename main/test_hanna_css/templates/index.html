@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mynews — My Stories</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Bodoni+Moda:opsz,wght@6..96,700;6..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="header">
+  <a href="/" class="logo">
+    <div class="logo-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="3" y="4" width="9" height="2.5" rx="1.2" fill="white"/>
+        <rect x="3" y="8.5" width="14" height="1.5" rx=".75" fill="white" opacity=".55"/>
+        <rect x="3" y="11" width="11" height="1.5" rx=".75" fill="white" opacity=".4"/>
+        <rect x="3" y="13.5" width="12" height="1.5" rx=".75" fill="white" opacity=".4"/>
+        <circle cx="15" cy="5.5" r="2.8" fill="#4A7CFF"/>
+        <circle cx="15" cy="5.5" r="1.3" fill="white"/>
+      </svg>
+    </div>
+    <div class="logo-wordmark">
+      <span class="logo-my">my</span>
+      <span class="logo-news">news<span class="logo-dot"></span></span>
+    </div>
+  </a>
+  <nav class="header-nav">
+    <a href="#pipeline-card" class="nav-link">Custom topics</a>
+    <button class="btn-signin">Sign in</button>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-accent"></div>
+    <div class="hero-text">
+      <h1>MY STORIES<br><span class="hero-sub">OF THE DAY</span></h1>
+      <p>Your personalised feed — curated, focused, noise-free.</p>
+      <div class="hero-badges">
+        <span class="badge badge-live">LIVE</span>
+        {% if stories %}
+          {% set total = namespace(n=0) %}
+          {% for arts in stories.values() %}{% set total.n = total.n + arts|length %}{% endfor %}
+          <span class="badge badge-count">{{ stories|length }} topic{% if stories|length > 1 %}s{% endif %} · {{ total.n }} article{% if total.n > 1 %}s{% endif %}</span>
+        {% else %}
+          <span class="badge badge-count">Choose your interests</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul class="flash-list">
+      {% for msg in messages %}
+        <li class="flash-msg">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="7" cy="7" r="6"/>
+            <line x1="7" y1="4" x2="7" y2="7.5"/>
+            <circle cx="7" cy="9.5" r=".6" fill="currentColor" stroke="none"/>
+          </svg>
+          {{ msg }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+<main class="main">
+
+  <div class="card topics-card" id="topics-card">
+    <p class="card-label">Topics</p>
+    <h2 class="card-title">Choose your interests</h2>
+    <form action="/show-stories" method="post" id="topics-form">
+      <div class="topics-grid">
+        {% for interest in all_interests %}
+          <label class="chip">
+            <input type="checkbox" name="interests" value="{{ interest }}"
+                   {% if interest in selected_interests %}checked{% endif %}>
+            <span class="chip-check">
+              <svg viewBox="0 0 10 10"><polyline points="2,5 4.2,7.5 8,2.5"/></svg>
+            </span>
+            {{ interest }}
+          </label>
+        {% endfor %}
+      </div>
+      <hr class="topics-divider">
+      <div class="topics-actions">
+        <button type="submit" class="btn-primary">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="2,7 6,11 12,3"/>
+          </svg>
+          Show Stories
+        </button>
+        <span class="topics-hint" id="topics-hint">
+          {% if selected_interests %}
+            {{ selected_interests|length }} topic{% if selected_interests|length > 1 %}s{% endif %} selected
+          {% else %}
+            Select at least one topic
+          {% endif %}
+        </span>
+      </div>
+    </form>
+  </div>
+
+  <div class="card search-card" id="pipeline-card">
+    <span class="search-label">Add a custom topic</span>
+    <form action="/add-interest" method="post" style="display:contents">
+      <div class="search-input-wrap">
+        <svg viewBox="0 0 16 16" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="6.5" cy="6.5" r="5"/>
+          <line x1="10.5" y1="10.5" x2="14" y2="14"/>
+        </svg>
+        <input class="search-input" type="text" name="new_interest"
+               placeholder="e.g. SpaceX, European Finance, Geopolitics..."
+               autocomplete="off" required>
+      </div>
+      <button type="submit" class="btn-pipeline">
+        Enter
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="2" y1="6.5" x2="11" y2="6.5"/>
+          <polyline points="7,2.5 11,6.5 7,10.5"/>
+        </svg>
+      </button>
+      <span class="search-hint">Separate multiple topics with a comma</span>
+    </form>
+  </div>
+
+  {% if stories %}
+    {% set palette = ['#4A7CFF','#F59E0B','#E05AFF','#16A660','#FF6B6B','#00C9B1'] %}
+    {% set total = namespace(n=0) %}
+    {% for arts in stories.values() %}{% set total.n = total.n + arts|length %}{% endfor %}
+
+    <div class="feed-header">
+      <span class="feed-label">YOUR FEED · {{ total.n }} ARTICLE{% if total.n > 1 %}S{% endif %}</span>
+      <div class="sort-tabs">
+        <button class="sort-tab active" type="button">Relevance</button>
+        <button class="sort-tab" type="button">Latest</button>
+      </div>
+    </div>
+
+    <div class="stories-list">
+      {% for interest, articles in stories.items() %}
+        {% set accent = palette[loop.index0 % palette|length] %}
+
+        <div class="topic-section-header" style="--card-accent: {{ accent }}">
+          <span class="topic-section-dot"></span>
+          <span class="topic-section-name">{{ interest|upper }}</span>
+          <span class="topic-section-count">{{ articles|length }} article{% if articles|length > 1 %}s{% endif %}</span>
+          <div class="topic-section-line"></div>
+        </div>
+
+        {% for art in articles %}
+          {% set art_url  = art[3] if art|length > 3 else None %}
+          {% set art_date = art[1]|string|truncate(10, True, '') if art[1] else '' %}
+
+          <article class="story-card" style="--card-accent: {{ accent }}">
+            <div class="story-card-inner">
+              <div class="story-meta">
+                <span class="topic-tag" style="background: {{ accent }}22; color: {{ accent }}">{{ interest|upper }}</span>
+                <span class="freshness">{{ art_date }}</span>
+                {% if art_url %}
+                  <a href="{{ art_url }}" target="_blank" rel="noopener" class="story-ext-link" title="Source">
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4.5 2H2a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V6.5"/>
+                      <polyline points="6.5,1 10,1 10,4.5"/>
+                      <line x1="5" y1="6" x2="10" y2="1"/>
+                    </svg>
+                  </a>
+                {% endif %}
+                <button class="story-bookmark" type="button" aria-label="Bookmark">
+                  <svg width="13" height="15" viewBox="0 0 13 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 1h11v13l-5.5-3.5L1 14V1z"/>
+                  </svg>
+                </button>
+              </div>
+
+              {% if art_url %}
+                <a href="{{ art_url }}" target="_blank" rel="noopener" class="story-title-link">
+                  <h3 class="story-title">{{ art[0] }}</h3>
+                </a>
+              {% else %}
+                <h3 class="story-title">{{ art[0] }}</h3>
+              {% endif %}
+
+              {% if art[2] %}
+                <p class="story-summary">{{ art[2] }}</p>
+              {% endif %}
+            </div>
+
+            {% if art_url %}
+              <div class="story-footer-simple">
+                <a href="{{ art_url }}" target="_blank" rel="noopener" class="story-read-btn">
+                  Read full article
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="2" y1="6" x2="10" y2="6"/>
+                    <polyline points="6.5,2 10,6 6.5,10"/>
+                  </svg>
+                </a>
+              </div>
+            {% endif %}
+          </article>
+        {% endfor %}
+      {% endfor %}
+    </div>
+
+  {% else %}
+    <div class="empty-state">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <rect x="6" y="8" width="36" height="32" rx="4"/>
+        <line x1="14" y1="18" x2="34" y2="18"/>
+        <line x1="14" y1="24" x2="28" y2="24"/>
+        <line x1="14" y1="30" x2="22" y2="30"/>
+      </svg>
+      <p>Select your interests and click <strong>Show Stories</strong></p>
+    </div>
+  {% endif %}
+
+</main>
+
+<footer class="footer">
+  <span class="footer-copy">© 2025 mynews · Curated for you</span>
+  <a href="#" class="footer-link">Feedback</a>
+</footer>
+
+<script>
+  const checkboxes = document.querySelectorAll('.chip input[type=checkbox]');
+  const hint = document.getElementById('topics-hint');
+  function updateHint() {
+    const n = [...checkboxes].filter(c => c.checked).length;
+    hint.textContent = n > 0
+      ? `${n} topic${n > 1 ? 's' : ''} selected`
+      : 'Select at least one topic';
+  }
+  checkboxes.forEach(cb => cb.addEventListener('change', updateHint));
+</script>
+
+</body>
+</html>

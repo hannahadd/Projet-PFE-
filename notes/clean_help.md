@@ -7,6 +7,8 @@ python main/ingestiontable/ccnews/parse_ccnews_day.py  --date 20260211 --skip-ex
 +
 ton code a toi a remplir 
 
+python main/ingestiontable/export_dataset.py --start-date 20260305 --end_date 20260308
+
 # 5) Normaliser et charger les articles en DB
 python main/ingestiontable/Normalisation_dataset.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --in ccnews_warc_by_day/20260211json   --in main/ingestiontable/dataset_top20.csv --chunk-size 1000 --batch-size 1000
 
@@ -140,9 +142,13 @@ Writing run created: writing_run_id=29 | interests=7 (0:10)
   [OK] AI and LLMs [10/10] saved (article_summary_id=1173)
 [RUN] 2/7 Apple (articles=10)
 
-## completer les commandes  "recuperation des articles" avec ton code a toi qui creer le csv
+
+## completer les commandes  "recuperation des articles" avec ton code a toi qui creer le csv, si possible met ton script dans main/ingestiontable/top20
 
 
 ## Faire un plan complet de la presentation qui s'inspire de la presentation de mi parcours (inspire toi de toutes les commandes et fonctionnalités comme eval.py, save.py (notre propre visualisateur ect...))
+
+pour la presentation, hanna peut prendre la db, deduplication writing, ingestion (le schema general)
+moi reranker et toi retrieval ou inversement 
 
 

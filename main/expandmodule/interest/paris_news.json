@@ -1,0 +1,20 @@
+{
+  "interest": "paris news",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-15T21:31:55.345393+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Savoyard",
+    "Metro",
+    "Arc de Triomphe",
+    "Notre-Dame",
+    "Riot",
+    "Tour Eiffl",
+    "Hussard",
+    "Bourbon",
+    "Jazz",
+    "Pig"
+  ],
+  "raw_output": "Savoyard\nMétro\nArc de Triomphe\nNotre-Dame\nRiot\nTour Eiffl\nHussard\nBourbon\nJazz\nPig"
+}

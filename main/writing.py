@@ -449,7 +449,62 @@ def main() -> int:
         f"Writing run created: writing_run_id={writing_run_id} | "
         f"interests={len(selected_interests)} ({start}:{end})"
     )
+    for idx, interest in enumerate(selected_interests, 1):
+        hits = grouped.get(interest, [])
+        print(f"[RUN] {idx}/{len(selected_interests)} {interest} (articles={len(hits)})")
+        
+        for k, h in enumerate(hits, 1):
+            meta = _pick_meta(h)
+            content = _stable_article_text(h, max_chars=int(args.max_chars))
 
+            # --- LOGIQUE DE TENTATIVE AVEC SECOND PASS ---
+            def execute_generation(is_retry=False):
+                return _build_llm_output(client, interest, meta, content, bool(args.debug))
+
+            try:
+                status, llm_out = execute_generation(is_retry=False)
+                if status != "OK":
+                    print(f"  [!] {status} détecté, Second Pass pour {interest}...")
+                    status, llm_out = execute_generation(is_retry=True)
+                    if status == "OK":
+                        print(f"  [+] Second Pass réussi !")
+            except Exception as exc:
+                status = "FAIL"
+                llm_out = {
+                    "title": "", "summary_fr": "", "points_cles": [],
+                    "notes": f"Generation failed: {exc}",
+                    "raw_llm": {"error": str(exc)},
+                }
+
+            row = {
+                "interest": interest,
+                "rank": int(meta.get("rank") or k),
+                "article_id": meta.get("article_id"),
+                "title": core.clean_generated_title(llm_out.get("title")),
+                "url": meta.get("url"),
+                "source": meta.get("source"),
+                "published_date": meta.get("published_date"),
+                "lang": meta.get("lang"),
+                "rerank_score": meta.get("rerank_score"),
+                "dense_score": meta.get("dense_score"),
+                "summary_fr": llm_out.get("summary_fr", ""),
+                "points_cles": llm_out.get("points_cles", []),
+                "notes": llm_out.get("notes"),
+                "raw_llm": llm_out.get("raw_llm", {}),
+            }
+            
+            article_summary_id = store.upsert_article_summary(writing_run_id, row)
+            missing = _missing_fields(row)
+            suffix = f" | missing={','.join(missing)}" if missing else ""
+            print(f"   [{status}] {interest} [{k}/{len(hits)}] saved (article_summary_id={article_summary_id}{suffix})")
+            time.sleep(float(args.sleep))
+
+    # C'EST ICI QUE L'INDENTATION ÉTAIT FAUSSE : 
+    # Ce print doit être au même niveau que le 'for idx...'
+    print(f"Done. Summaries stored in PostgreSQL with writing_run_id={writing_run_id}")
+    return 0
+
+""" NE PAS SUPPRIMER AU CAS OU
     for idx, interest in enumerate(selected_interests, 1):
         hits = grouped.get(interest, [])
         print(f"[RUN] {idx}/{len(selected_interests)} {interest} (articles={len(hits)})")
@@ -500,9 +555,10 @@ def main() -> int:
             )
             time.sleep(float(args.sleep))
 
+
     print(f"Done. Summaries stored in PostgreSQL with writing_run_id={writing_run_id}")
     return 0
-
+"""
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,0 +1,20 @@
+{
+  "interest": "video games",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-15T20:06:38.689043+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Cloud Gaming",
+    "Esports Betting",
+    "Live Streaming",
+    "Game Jam",
+    "Modding Community",
+    "Indie Devs",
+    "Haptic Feedback",
+    "Virtual Production",
+    "Play-to-Earn",
+    "Neural Interfaces"
+  ],
+  "raw_output": "Cloud Gaming\nEsports Betting\nLive Streaming\nGame Jam\nModding Community\nIndie Devs\nHaptic Feedback\nVirtual Production\nPlay-to-Earn\nNeural Interfaces"
+}

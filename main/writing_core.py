@@ -111,20 +111,27 @@ def clean_generated_title(title: Optional[str]) -> str:
 
 
 def clean_generated_summary(summary: Optional[str]) -> str:
+    # 1. Nettoyage initial et phrases interdites
     text = (summary or "").replace("\r\n", "\n").strip()
-    if not text:
-        return ""
+    forbidden_starts = ["According to", "Based on", "Here is", "This article", "I have analyzed"]
+    
+    for phrase in forbidden_starts:
+        if text.lower().startswith(phrase.lower()):
+            parts = text.split('.', 1)
+            if len(parts) > 1:
+                text = parts[1].strip()
+    
+    # 2. Formatage des lignes
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
         return ""
-    if len(lines) == 1:
-        return SUMMARY_PREFIX_RE.sub("", lines[0]).strip()
-
-    cleaned_lines: List[str] = []
+        
+    cleaned_lines = []
     for idx, line in enumerate(lines):
         if idx == 0:
             line = SUMMARY_PREFIX_RE.sub("", line).strip()
         cleaned_lines.append(line)
+        
     return " ".join(cleaned_lines).strip()
 
 
@@ -164,14 +171,25 @@ def _looks_like_summary(text: str) -> bool:
 
 
 def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> Dict[str, Any]:
-    cleaned = strip_think_and_fences(raw).replace("\r\n", "\n").strip()
+    # 1. Nettoyage initial : suppression des balises <think> et blocs de code
+    cleaned_raw = strip_think_and_fences(raw).replace("\r\n", "\n").strip()
 
-    if not cleaned:
-        out: Dict[str, Any] = {"title": "", "summary_fr": "", "points_cles": []}
-        out["notes"] = "Empty model response"
-        return out
+    if not cleaned_raw:
+        return {"title": "", "summary_fr": "", "points_cles": [], "notes": "Empty model response"}
 
-    labeled = SINGLE_LINE_LABELED_RE.match(cleaned)
+    # 2. Tentative "Brutale" : Extraction de JSON n'importe où dans le texte
+    json_start = cleaned_raw.find('{')
+    json_end = cleaned_raw.rfind('}')
+    if json_start != -1 and json_end != -1:
+        try:
+            json_str = cleaned_raw[json_start : json_end + 1]
+            data = json.loads(json_str)
+            return normalize_llm_article_output(data)
+        except json.JSONDecodeError:
+            pass # On continue si le JSON est corrompu vers le parsing manuel
+
+    # 3. Parsing manuel (Fall-back) : Si le modèle n'a pas renvoyé de JSON valide
+    labeled = SINGLE_LINE_LABELED_RE.match(cleaned_raw)
     if labeled:
         title = clean_generated_title(labeled.group("title"))
         summary = clean_generated_summary(labeled.group("summary"))
@@ -180,21 +198,19 @@ def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> 
             out["notes"] = "Partial model response"
         return out
 
-    lines = [line.rstrip() for line in cleaned.splitlines()]
+    lines = [line.rstrip() for line in cleaned_raw.splitlines()]
     first_idx = next((idx for idx, line in enumerate(lines) if line.strip()), None)
     if first_idx is None:
-        out = {"title": "", "summary_fr": "", "points_cles": []}
-        out["notes"] = "Empty model response"
-        return out
+        return {"title": "", "summary_fr": "", "points_cles": [], "notes": "Empty model response"}
 
     title = clean_generated_title(lines[first_idx])
     summary_lines = [line.strip() for line in lines[first_idx + 1 :] if line.strip()]
-    if summary_lines:
-        summary_lines[0] = SUMMARY_PREFIX_RE.sub("", summary_lines[0]).strip()
+    
+    # Application du nettoyeur de summary (avec les phrases interdites)
     summary = clean_generated_summary("\n".join(line for line in summary_lines if line))
 
     if not summary and _looks_like_summary(title):
-        summary = cleaned
+        summary = cleaned_raw
         title = ""
 
     out = {"title": title, "summary_fr": summary, "points_cles": []}
@@ -205,6 +221,7 @@ def parse_llm_article_output(raw: str, fallback_title: Optional[str] = None) -> 
         missing.append("summary")
     if missing:
         out["notes"] = f"Missing parsed fields: {', '.join(missing)}"
+    
     return out
 
 
@@ -433,30 +450,27 @@ class OllamaClient:
 # Prompting (article-by-article)
 # -------------------------
 
-SUMMARY_SYSTEM_PROMPT = """Return only one very detailed English summary paragraph.
-Write 8 to 12 rich sentences.
-Cover the main facts, actors, chronology, numbers, context, causes, stakes, and consequences when they are present in the article.
-Be factual and specific.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
-Do not mention instructions.
-Do not invent facts.
+SUMMARY_SYSTEM_PROMPT = """You are a strictly constrained text processing engine.
+Task: Generate one English summary paragraph (8-12 sentences) from the provided article.
+CRITICAL RULES:
+1. OUTPUT ONLY a raw JSON object with the exact keys: {"summary_fr": "...", "points_cles": [...]}.
+2. CONTENT RULE: The field "summary_fr" MUST contain the summary written in ENGLISH.
+3. DO NOT generate summaries in other languages (no French, no Ukrainian, etc.).
+4. FORBIDDEN: Do not generate fields like "summary_en", "summary_uk", "summary_ru", "summary_de", etc.
+5. FORBIDDEN: Do not output text in any language other than English.
+6. DO NOT output any introductory text, analysis, or conversational filler.
+7. DO NOT repeat the prompt instructions.
+8. Output MUST be a single raw JSON object. Do not write a single word before '{' or after '}'.
+9. If the article contains multiple languages, process the content but output ONLY English.
 """
 
-SUMMARY_RETRY_SYSTEM_PROMPT = """Your previous answer was invalid because it copied instructions, analysis, or list formatting.
-Retry now.
-Return only one very detailed English summary paragraph.
-Write 8 to 12 rich sentences.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
+SUMMARY_RETRY_SYSTEM_PROMPT = """Your previous response failed the formatting rules.
+Task: Generate one English summary paragraph.
+CRITICAL RULES:
+1. OUTPUT ONLY the JSON format: {"summary_fr": "...", "points_cles": [...]}.
+2. ZERO conversational filler.
+3. ZERO analysis of the input.
+4. ONLY the requested JSON structure.
 """
 
 TITLE_SYSTEM_PROMPT = """Return only a short English news title for the article.
