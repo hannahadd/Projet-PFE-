@@ -51,6 +51,10 @@ Pourquoi ce choix :
 - BM25 seul = manque de sémantique,
 - Rerank seul sans retrieval large =  beaucoup trop couteux en ressources sur 300k.
 
+note :
+Simple AI = BM25 + règles/fuzzy matching,
+Deep Learning = embeddings + reranker + génération LLM.
+
 ## 06:00 → 08:00 — Résultats obtenus (honnêtes et chiffrés)
 Utiliser exactement vos chiffres :
 - Retrieval avec `topk=1300` sur ~300k articles : **9/10 articles cibles retrouvés**, mais score faible.
