@@ -1,15 +1,13 @@
 New command 
 
 
-# 5) recuperation des articles :
+# recuperation des articles (deux sources de données):
 python main/ingestiontable/ccnews/ccnewsdownload.py  --date 20260211
 python main/ingestiontable/ccnews/parse_ccnews_day.py  --date 20260211 --skip-existing  --workers 8
 +
-ton code a toi a remplir 
-
 python main/ingestiontable/export_dataset.py --start-date 20260305 --end_date 20260308
 
-# 5) Normaliser et charger les articles en DB
+# Normaliser et charger les articles en DB
 python main/ingestiontable/Normalisation_dataset.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --in ccnews_warc_by_day/20260211json   --in main/ingestiontable/dataset_top20.csv --chunk-size 1000 --batch-size 1000
 
 # new retrieval call
@@ -18,7 +16,7 @@ python main/news_reco.py   --db-url postgresql://postgres:postgres@localhost:543
 (n'y touche pas et surtout pas de flag --reindex, ça dure 2h30)
 
 
-# new dedup (le truc a modifier) ???
+# new dedup ???
 
 /home/pfe/Documents/PFE/.venv312/bin/python main/depuplication.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news
@@ -93,7 +91,7 @@ e01555ed3c10   qdrant/qdrant   "./entrypoint.sh"        14 hours ago   Up 14 sec
 
 
 ----------------------------------
-# probleme a regler :
+# probleme a regler a ne pas mettre dans le readme  :
 
 ## faire l'orchestrateur, attention, clean la memoire gpu avant de lancer chaque scripts pour eviter ça (se declenche de maniere random):
 
@@ -152,3 +150,4 @@ pour la presentation, hanna peut prendre la db, deduplication writing, ingestion
 moi reranker et toi retrieval ou inversement 
 
 
+/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/test_hanna_css/app.py
