@@ -1,0 +1,20 @@
+{
+  "interest": "cfa",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-20T07:47:59.837307+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Currency reform",
+    "Gold standard",
+    "Devaluation history",
+    "Zone structure",
+    "ECOWAS payment",
+    "African finance",
+    "Central bank",
+    "Monetary union",
+    "Transition plan",
+    "Regional trade"
+  ],
+  "raw_output": "Currency reform\nGold standard\nDevaluation history\nZone structure\nECOWAS payment\nAfrican finance\nCentral bank\nMonetary union\nTransition plan\nRegional trade"
+}

@@ -1,0 +1,20 @@
+{
+  "interest": "competitive gaming",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-17T22:15:24.183125+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "AI coaching",
+    "Crosshair customization",
+    "Elixir recovery",
+    "Panic room",
+    "Smurf accounts",
+    "Twitch raiding",
+    "VOD review",
+    "Zone control",
+    "Agent synergy",
+    "Ranked grind"
+  ],
+  "raw_output": "AI coaching\nCrosshair customization\nElixir recovery\nPanic room\nSmurf accounts\nTwitch raiding\nVOD review\nZone control\nAgent synergy\nRanked grind"
+}

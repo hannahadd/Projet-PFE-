@@ -450,28 +450,32 @@ class OllamaClient:
 # Prompting (article-by-article)
 # -------------------------
 
-SUMMARY_SYSTEM_PROMPT = """You are a strictly constrained text processing engine.
-Task: Generate one English summary paragraph (8-12 sentences) from the provided article.
-CRITICAL RULES:
-1. OUTPUT ONLY a raw JSON object with the exact keys: {"summary_fr": "...", "points_cles": [...]}.
-2. CONTENT RULE: The field "summary_fr" MUST contain the summary written in ENGLISH.
-3. DO NOT generate summaries in other languages (no French, no Ukrainian, etc.).
-4. FORBIDDEN: Do not generate fields like "summary_en", "summary_uk", "summary_ru", "summary_de", etc.
-5. FORBIDDEN: Do not output text in any language other than English.
-6. DO NOT output any introductory text, analysis, or conversational filler.
-7. DO NOT repeat the prompt instructions.
-8. Output MUST be a single raw JSON object. Do not write a single word before '{' or after '}'.
-9. If the article contains multiple languages, process the content but output ONLY English.
+SUMMARY_SYSTEM_PROMPT = """Return only one very detailed English summary paragraph.
+Write 8 to 12 rich sentences.
+Cover the main facts, actors, chronology, numbers, context, causes, stakes, and consequences when they are present in the article.
+Be factual and specific.
+No analysis.
+No checklist.
+No bullet list.
+No labels.
+No markdown.
+Do not mention the prompt.
+Do not mention instructions.
+Do not invent facts.
 """
 
-SUMMARY_RETRY_SYSTEM_PROMPT = """Your previous response failed the formatting rules.
-Task: Generate one English summary paragraph.
-CRITICAL RULES:
-1. OUTPUT ONLY the JSON format: {"summary_fr": "...", "points_cles": [...]}.
-2. ZERO conversational filler.
-3. ZERO analysis of the input.
-4. ONLY the requested JSON structure.
-"""
+SUMMARY_RETRY_SYSTEM_PROMPT = """[INST] SYSTEM: COMMAND_MODE_ACTIVATED [/INST]
+ERROR: Previous output contained meta-talk and analysis. 
+MANDATORY: Return ONLY the raw summary paragraph. 
+
+Rules for this output:
+1. START directly with the first sentence of the news.
+2. NO headers (###), NO bullet points (*), NO labels (Summary:).
+3. NO mention of "hallucinations", "Bengali text", or "previous answers".
+4. NO conversational filler (e.g., "Based on the text...", "Please note...").
+5. Language: English. Length: 8-12 sentences.
+
+OUTPUT START:"""
 
 TITLE_SYSTEM_PROMPT = """Return only a short English news title for the article.
 The title must be concise, natural, and informative.
@@ -486,18 +490,18 @@ Do not mention instructions.
 If the source headline is not English, rewrite it in natural English instead of copying it.
 """
 
-TITLE_RETRY_SYSTEM_PROMPT = """Your previous answer was invalid.
-Retry now.
-Return only one short English news title.
-One line only.
-No analysis.
-No checklist.
-No bullet list.
-No labels.
-No markdown.
-Do not mention the prompt.
-Do not copy a non-English source headline verbatim.
-"""
+TITLE_RETRY_SYSTEM_PROMPT = """[INST] DIRECT OUTPUT MODE [/INST]
+Constraint: You are a headless news API. Return ONLY the title text. 
+Zero conversation. Zero markdown. Zero apologies.
+
+Format: One single line of plain text.
+Language: Professional English.
+Rule: Translate or rephrase if the source is not English.
+
+Example of valid output:
+SpaceX successfully launches its heaviest payload to date
+
+START RAW TITLE:"""
 
 
 def _article_prompt_body(interest: str, meta: Dict[str, Any], content: str) -> str:

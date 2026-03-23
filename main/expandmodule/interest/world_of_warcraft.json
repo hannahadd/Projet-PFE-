@@ -1,0 +1,20 @@
+{
+  "interest": "world of warcraft",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-19T11:35:12.553219+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Dragonflight",
+    "Mythic+",
+    "Raid Finder",
+    "Dungeons & Raids",
+    "BlizzCon",
+    "Expansion Pack",
+    "Class Hall",
+    "PvP Arena",
+    "World Quests",
+    "Patch Notes"
+  ],
+  "raw_output": "Dragonflight\nMythic+\nRaid Finder\nDungeons & Raids\nBlizzCon\nExpansion Pack\nClass Hall\nPvP Arena\nWorld Quests\nPatch Notes"
+}

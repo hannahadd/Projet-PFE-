@@ -1,0 +1,20 @@
+{
+  "interest": "league of legends",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-19T22:10:56.653326+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Summoner's Rift",
+    "Champion Pool",
+    "Worlds Finals",
+    "LCS Masters",
+    "LEC Spring Split",
+    "Pacific Rift",
+    "Korean Challenger",
+    "TFT Set",
+    "Blind Pick Mode",
+    "Riot Games"
+  ],
+  "raw_output": "Summoner's Rift\nChampion Pool\nWorlds Finals\nLCS Masters\nLEC Spring Split\nPacific Rift\nKorean Challenger\nTFT Set\nBlind Pick Mode\nRiot Games"
+}

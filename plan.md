@@ -79,7 +79,7 @@ Utiliser exactement vos chiffres :
 - personalisé le prompting par interet sur le reranking automatique via IA.
 - améliorer le modele de reranking de 4b à 8b.
 - Post-check de qualité sur writing + retry contrôlé.
-- Pistes MLOps : suivi métriques et parametres utilisés pour les run, automatisation expérimentations.
+- Pistes MLOps : suivi métriques et parametres utilisés pour les run
 
 ---
 

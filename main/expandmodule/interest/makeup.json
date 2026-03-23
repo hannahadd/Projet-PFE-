@@ -1,0 +1,20 @@
+{
+  "interest": "makeup",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-19T23:01:59.378882+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "clean beauty",
+    "glass skin",
+    "balm blush",
+    "peptide primers",
+    "korean skincare",
+    "lip tint",
+    "derma rollers",
+    "sunscreen sticks",
+    "cruelty free",
+    "sustainable packaging"
+  ],
+  "raw_output": "clean beauty\nglass skin\nbalm blush\npeptide primers\nkorean skincare\nlip tint\nderma rollers\nsunscreen sticks\ncruelty free\nsustainable packaging"
+}
