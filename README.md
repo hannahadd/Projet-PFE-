@@ -169,7 +169,7 @@ Exécution pipeline standard pour un intérêt (exemple `finance`) :
 python main/ingestiontable/Normalisation_dataset.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --in ccnews_warc_by_day/20260211json \
-  --in main/ingestiontable/gdelt/ingestion/dataset_top20.csv \
+  --in main/ingestiontable/dataset_top20.csv \
   --chunk-size 1000 \
   --batch-size 1000
 
@@ -232,7 +232,7 @@ python main/ingestiontable/ccnews/parse_ccnews_day.py --date 20260211 --skip-exi
 ### A.2 GDELT Top 20
 
 ```bash
-python main/ingestiontable/export_dataset.py --start_date 20260305 --end_date 20260308
+python main/ingestiontable/export_dataset.py --start_date 20260305 --end_date 20260305
 ```
 
 Note : dans ce script, les arguments sont `--start_date` et `--end_date`.
