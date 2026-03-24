@@ -237,7 +237,11 @@ def main() -> int:
     parser.add_argument("--batch-size", type=int, default=1000, help="Number of normalized articles to upsert/export per batch")
     parser.add_argument("--chunk-size", type=int, default=1000, help="Number of raw rows to load at a time from each input file")
     parser.add_argument("--no-db", action="store_true", help="Skip PostgreSQL upsert")
-    parser.add_argument("--export-json", default=str(ROOT_DIR / "main" / "ingestiontable" / "merged_dataset.normalized.json"))
+    parser.add_argument(
+        "--export-json",
+        default=None,
+        help="Optional output JSON path. If omitted, no JSON file is exported.",
+    )
     args = parser.parse_args()
 
     if args.batch_size <= 0:
