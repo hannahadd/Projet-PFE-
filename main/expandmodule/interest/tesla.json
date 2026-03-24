@@ -1,0 +1,20 @@
+{
+  "interest": "tesla",
+  "model": "qwen3.5:9b-q4_K_M",
+  "generated_at": "2026-03-23T23:53:30.206194+00:00",
+  "status": "ok",
+  "n_items": 10,
+  "items": [
+    "Tesla FSD",
+    "Cybertruck",
+    "Optimus Bot",
+    "Gigafactory AI",
+    "4680 Battery",
+    "Yoke Steering",
+    "Vibe Check",
+    "Pumpkin Patch",
+    "Hail Damage",
+    "AI Day"
+  ],
+  "raw_output": "Tesla FSD\nCybertruck\nOptimus Bot\nGigafactory AI\n4680 Battery\nYoke Steering\nVibe Check\nPumpkin Patch\nHail Damage\nAI Day"
+}

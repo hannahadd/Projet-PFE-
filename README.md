@@ -137,6 +137,17 @@ source .venv312/bin/activate
 docker start pfe-qdrant
 docker start pfe-postgres
 docker ps
+
+si vous ne les avez pas :
+
+docker run -d --name pfe-postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=pfe_news \
+  -p 5432:5432 postgres:16
+
+docker run -d --name pfe-qdrant \
+  -p 6333:6333 \
+  qdrant/qdrant
 ```
 
 ### 3) Vérifier Ollama
@@ -158,11 +169,11 @@ Exécution pipeline standard pour un intérêt (exemple `finance`) :
 python main/ingestiontable/Normalisation_dataset.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --in ccnews_warc_by_day/20260211json \
-  --in main/ingestiontable/dataset_top20.csv \
+  --in main/ingestiontable/gdelt/ingestion/dataset_top20.csv \
   --chunk-size 1000 \
   --batch-size 1000
 
-# 2) Retrieval
+# 2) Retrieval (avec --reindex si c'est la première fois, le reindex dure 2h sur RTX 5070 TI)
 python main/news_reco.py \
   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news \
   --topk 1300 \
@@ -390,7 +401,7 @@ Puis ouvrir :
 ## Viewer complet (sélection d’intérêts + déclenchement pipeline)
 
 ```bash
-/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/test_hanna_css/app.py
+/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/front/app.py
 ```
 
 ---

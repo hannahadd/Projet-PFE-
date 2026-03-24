@@ -35,7 +35,7 @@ python main/writing.py   --db-url postgresql://postgres:postgres@localhost:5432/
 
 ---------------------------------------------------
 
-side commaand and debugging
+side command and debugging
 
 # env
 
@@ -87,67 +87,6 @@ e01555ed3c10   qdrant/qdrant   "./entrypoint.sh"        14 hours ago   Up 14 sec
 9b89bbbd5dd8   postgres:16     "docker-entrypoint.s…"   14 hours ago   Up 5 seconds    0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp   pfe-postgres
 
 
+# app
 
-
-
-----------------------------------
-# probleme a regler a ne pas mettre dans le readme  :
-
-## faire l'orchestrateur, attention, clean la memoire gpu avant de lancer chaque scripts pour eviter ça (se declenche de maniere random):
-
-
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Traceback (most recent call last):
-  File "/home/pfe/Documents/PFE/main/reranker.py", line 647, in <module>
-    raise SystemExit(main())
-                     ^^^^^^
-  File "/home/pfe/Documents/PFE/main/reranker.py", line 530, in main
-    reranker = core.QwenReranker(
-               ^^^^^^^^^^^^^^^^^^
-  File "/home/pfe/Documents/PFE/main/reranker_core.py", line 103, in __init__
-    self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs).eval()
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/pfe/Documents/PFE/.venv312/lib/python3.12/site-packages/transformers/models/auto/auto_factory.py", line 374, in from_pretrained
-    return model_class.from_pretrained(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/pfe/Documents/PFE/.venv312/lib/python3.12/site-packages/transformers/modeling_utils.py", line 4137, in from_pretrained
-    loading_info, disk_offload_index = cls._load_pretrained_model(model, state_dict, checkpoint_files, load_config)
-                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/pfe/Documents/PFE/.venv312/lib/python3.12/site-packages/transformers/modeling_utils.py", line 4216, in _load_pretrained_model
-    caching_allocator_warmup(model, expanded_device_map, load_config.hf_quantizer)
-  File "/home/pfe/Documents/PFE/.venv312/lib/python3.12/site-packages/transformers/modeling_utils.py", line 4810, in caching_allocator_warmup
-    _ = torch.empty(int(byte_count // 2), dtype=torch.float16, device=device, requires_grad=False)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 7.49 GiB. GPU 0 has a total capacity of 15.47 GiB of which 6.71 GiB is free. Process 28800 has 15.53 MiB memory in use. Process 54776 has 7.75 GiB memory in use. Including non-PyTorch memory, this process has 222.00 MiB memory in use. Of the allocated memory 0 bytes is allocated by PyTorch, and 0 bytes is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
-
-
-
-
-## "dans writing, regler les fails (second pass), et ne pas les afficher (les fails ont la colonne "notes" non nul dans articles_summaries )
-
-(.venv312) yohan@neon:/home/pfe/Documents/PFE$ python main/writing.py   --db-url postgresql://postgres:postgres@localhost:5432/pfe_news   --model qwen3.5:9b-q4_K_M   --interest-batch-size 10 --offset 0 --top_n 10   --rerank-run-id 23
-Writing run created: writing_run_id=29 | interests=7 (0:10)
-[RUN] 1/7 AI and LLMs (articles=10)
-  [OK] AI and LLMs [1/10] saved (article_summary_id=1164)
-  [OK] AI and LLMs [2/10] saved (article_summary_id=1165)
-  [OK] AI and LLMs [3/10] saved (article_summary_id=1166)
-  [OK] AI and LLMs [4/10] saved (article_summary_id=1167)
-  [FAIL] AI and LLMs [5/10] saved (article_summary_id=1168)
-  [OK] AI and LLMs [6/10] saved (article_summary_id=1169)
-  [FAIL] AI and LLMs [7/10] saved (article_summary_id=1170)
-  [OK] AI and LLMs [8/10] saved (article_summary_id=1171)
-  [OK] AI and LLMs [9/10] saved (article_summary_id=1172)
-  [OK] AI and LLMs [10/10] saved (article_summary_id=1173)
-[RUN] 2/7 Apple (articles=10)
-
-
-## completer les commandes  "recuperation des articles" avec ton code a toi qui creer le csv, si possible met ton script dans main/ingestiontable/top20
-
-
-## Faire un plan complet de la presentation qui s'inspire de la presentation de mi parcours (inspire toi de toutes les commandes et fonctionnalités comme eval.py, save.py (notre propre visualisateur ect...))
-
-pour la presentation, hanna peut prendre la db, deduplication writing, ingestion (le schema general)
-moi reranker et toi retrieval ou inversement 
-
-
-/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/test_hanna_css/app.py
+/home/pfe/Documents/PFE/.venv312/bin/python /home/pfe/Documents/PFE/main/front/app.py
